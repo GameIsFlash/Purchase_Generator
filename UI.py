@@ -1,165 +1,375 @@
+"""
+UI модуль для генератора таблиц закупки.
+Содержит весь пользовательский интерфейс на customtkinter.
+"""
+
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-import threading
-import subprocess
-import platform
-from pathlib import Path
-import os
-import json
-from main import generate_general_table, generate_purchase_tables
-from data_reader import DataReader
+import customtkinter as ctk
+from backend import PurchaseTableBackend
 
 
 class PurchaseTableGUI:
+    """Главный класс пользовательского интерфейса"""
+
     def __init__(self, root):
         self.root = root
         self.root.title("Генератор таблиц закупки")
         self.root.geometry("800x600")
         self.root.resizable(True, True)
 
-        # Настройки по умолчанию
-        self.images_dir = "data/images"
-        self.database_file = "data/table/database.xlsx"
-        self.output_dir = "output"
+        # Устанавливаем тему customtkinter
+        ctk.set_appearance_mode("light")
+        ctk.set_default_color_theme("blue")
 
-        # Данные для режима закупки
-        self.order_items = {}
-        self.filtered_items = {}
-        self.all_products = []
+        # Инициализация backend
+        self.backend = PurchaseTableBackend()
+        self.setup_backend_callbacks()
+
+        # Настройка стиля Treeview
+        self.setup_treeview_style()
+
+        # Переменные для UI
+        self.search_var = tk.StringVar()
+        self.db_var = tk.StringVar(value=self.backend.database_file)
+        self.img_var = tk.StringVar(value=self.backend.images_dir)
+        self.out_var = tk.StringVar(value=self.backend.output_dir)
 
         # Создание интерфейса
         self.create_main_interface()
 
         # Загрузка данных при старте
-        self.load_initial_data()
+        self.backend.load_initial_data()
 
+    def setup_backend_callbacks(self):
+        """Настройка колбэков для взаимодействия с backend"""
+        self.backend.set_callbacks(
+            status_callback=self.update_status,
+            message_callback=self.show_message,
+            error_callback=self.show_error,
+            success_callback=self.show_success
+        )
+
+    def update_status(self, message):
+        """Обновление статус-бара"""
+        self.status_bar.configure(text=message)
+
+    def show_message(self, title, message):
+        """Показ информационного сообщения"""
+        messagebox.showinfo(title, message)
+
+    def show_error(self, title, message):
+        """Показ сообщения об ошибке"""
+        messagebox.showerror(title, message)
+
+    def show_success(self, title, message):
+        """Показ сообщения об успехе"""
+        messagebox.showinfo(title, message)
+
+    def setup_treeview_style(self):
+        """Настройка стиля Treeview под customtkinter"""
+        style = ttk.Style()
+
+        def update_treeview_style():
+            if ctk.get_appearance_mode() == "Dark":
+                style.theme_use("clam")
+                style.configure("Custom.Treeview",
+                                background="#2A2A2A",
+                                foreground="white",
+                                fieldbackground="#2A2A2A",
+                                rowheight=28,
+                                font=("Arial", 11))
+                style.configure("Custom.Treeview.Heading",
+                                background="#3A3A3A",
+                                foreground="white",
+                                font=("Arial", 11, "bold"))
+                style.map("Custom.Treeview.Heading",
+                          background=[('active', '#4A4A4A')])
+            else:
+                style.theme_use("clam")
+                style.configure("Custom.Treeview",
+                                background="white",
+                                foreground="black",
+                                fieldbackground="white",
+                                rowheight=28,
+                                font=("Arial", 11))
+                style.configure("Custom.Treeview.Heading",
+                                background="#E0E0E0",
+                                foreground="black",
+                                font=("Arial", 11, "bold"))
+                style.map("Custom.Treeview.Heading",
+                          background=[('active', '#D0D0D0')])
+
+        update_treeview_style()
 
     def create_main_interface(self):
-        """Создание основного интерфейса"""
-        # Заголовок
-        title_frame = ttk.Frame(self.root, padding="10")
-        title_frame.pack(fill=tk.X)
+        """Создание основного интерфейса на customtkinter"""
 
-        title_label = ttk.Label(title_frame, text="Генератор таблиц закупки",
-                                font=("Arial", 16, "bold"))
+        # === Заголовок ===
+        title_frame = ctk.CTkFrame(self.root, fg_color="transparent")
+        title_frame.pack(fill="x", padx=20, pady=(20, 10))
+
+        title_label = ctk.CTkLabel(
+            title_frame,
+            text="Генератор таблиц закупки",
+            font=("Arial", 20, "bold"),
+            text_color=("black", "white")
+        )
         title_label.pack()
 
-        # Основные кнопки
-        buttons_frame = ttk.Frame(self.root, padding="10")
-        buttons_frame.pack(fill=tk.X)
+        # === Основные кнопки ===
+        buttons_frame = ctk.CTkFrame(self.root, fg_color="transparent")
+        buttons_frame.pack(fill="x", padx=20, pady=(0, 20))
 
         # Кнопка "Лист наличия"
-        availability_btn = ttk.Button(buttons_frame, text="Лист наличия",
-                                      command=self.generate_availability_list,
-                                      style="Accent.TButton")
-        availability_btn.pack(side=tk.LEFT, padx=(0, 10), ipadx=20, ipady=5)
+        availability_btn = self.create_button(
+            buttons_frame, "Лист наличия", self.generate_availability_list,
+            fg_color="#4CAF50", hover_color="#45a049"
+        )
 
         # Кнопка "Лист закупки"
-        purchase_btn = ttk.Button(buttons_frame, text="Лист закупки",
-                                  command=self.show_purchase_interface,
-                                  style="Accent.TButton")
-        purchase_btn.pack(side=tk.LEFT, padx=(0, 10), ipadx=20, ipady=5)
+        purchase_btn = self.create_button(
+            buttons_frame, "Лист закупки", self.show_purchase_interface,
+            fg_color="#2196F3", hover_color="#1976D2"
+        )
 
         # Кнопка "Генерировать лист закупки"
-        generate_btn = ttk.Button(buttons_frame, text="Генерировать лист закупки",
-                                  command=self.generate_purchase_list,
-                                  style="Accent.TButton")
-        generate_btn.pack(side=tk.LEFT, padx=(0, 10), ipadx=20, ipady=5)
+        generate_btn = self.create_button(
+            buttons_frame, "Генерировать лист закупки", self.generate_purchase_list,
+            fg_color="#FF9800", hover_color="#F57C00"
+        )
 
-        # Настройки путей
+        # === Настройки путей ===
         self.create_settings_frame()
 
-        # Фрейм для интерфейса закупки (изначально скрыт)
-        self.purchase_frame = ttk.Frame(self.root)
+        # === Фрейм для интерфейса закупки (изначально скрыт) ===
+        self.purchase_frame = ctk.CTkFrame(self.root, fg_color="transparent")
         self.create_purchase_interface()
 
-        # Статус бар
-        self.status_bar = ttk.Label(self.root, text="Готов к работе",
-                                    relief=tk.SUNKEN, anchor=tk.W)
-        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        # === Статус-бар ===
+        self.status_bar = ctk.CTkLabel(
+            self.root,
+            text="Готов к работе",
+            font=("Arial", 11),
+            text_color=("gray30", "gray70"),
+            fg_color=("gray90", "gray20"),
+            corner_radius=0,
+            height=25,
+            anchor="w",
+            padx=10
+        )
+        self.status_bar.pack(side=tk.BOTTOM, fill="x")
+
+    def create_button(self, parent, text, command,
+                      width=180, height=45,
+                      fg_color="#3B8ED0", hover_color="#367CBA",
+                      text_color="white", corner_radius=10,
+                      side=tk.LEFT, padx=(0, 15), pady=0,
+                      font=("Arial", 12, "bold")):
+        """Создаёт и упаковывает кнопку CTkButton"""
+        btn = ctk.CTkButton(
+            parent,
+            text=text,
+            command=command,
+            width=width,
+            height=height,
+            fg_color=fg_color,
+            hover_color=hover_color,
+            text_color=text_color,
+            corner_radius=corner_radius,
+            font=font
+        )
+        btn.pack(side=side, padx=padx, pady=pady)
+        return btn
 
     def create_settings_frame(self):
-        """Создание фрейма настроек"""
-        settings_frame = ttk.LabelFrame(self.root, text="Настройки путей", padding="10")
-        settings_frame.pack(fill=tk.X, padx=10, pady=5)
+        """Создание фрейма настроек на customtkinter"""
 
-        # База данных
-        db_frame = ttk.Frame(settings_frame)
-        db_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(db_frame, text="База данных:").pack(side=tk.LEFT)
-        self.db_var = tk.StringVar(value=self.database_file)
-        db_entry = ttk.Entry(db_frame, textvariable=self.db_var, width=50)
-        db_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        ttk.Button(db_frame, text="...", command=self.browse_database,
-                   width=3).pack(side=tk.RIGHT)
+        # Основной фрейм настроек
+        settings_container = ctk.CTkFrame(self.root, corner_radius=10)
+        settings_container.pack(fill="x", padx=20, pady=(10, 20))
 
-        # Папка изображений
-        img_frame = ttk.Frame(settings_frame)
-        img_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(img_frame, text="Изображения:").pack(side=tk.LEFT)
-        self.img_var = tk.StringVar(value=self.images_dir)
-        img_entry = ttk.Entry(img_frame, textvariable=self.img_var, width=50)
-        img_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        ttk.Button(img_frame, text="...", command=self.browse_images,
-                   width=3).pack(side=tk.RIGHT)
+        # Заголовок "Настройки путей"
+        header_label = ctk.CTkLabel(
+            settings_container,
+            text="Настройки путей",
+            font=("Arial", 14, "bold"),
+            text_color=("black", "white")
+        )
+        header_label.pack(anchor="w", padx=15, pady=(10, 5))
 
-        # Выходная папка
-        out_frame = ttk.Frame(settings_frame)
-        out_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(out_frame, text="Выходная папка:").pack(side=tk.LEFT)
-        self.out_var = tk.StringVar(value=self.output_dir)
-        out_entry = ttk.Entry(out_frame, textvariable=self.out_var, width=50)
-        out_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        ttk.Button(out_frame, text="...", command=self.browse_output,
-                   width=3).pack(side=tk.RIGHT)
+        # Внутренний контейнер для полей
+        settings_frame = ctk.CTkFrame(settings_container, fg_color="transparent")
+        settings_frame.pack(fill="x", padx=15, pady=(0, 15))
+
+        # === База данных ===
+        self.create_path_setting(settings_frame, "База данных:", self.db_var, self.browse_database)
+
+        # === Папка изображений ===
+        self.create_path_setting(settings_frame, "Изображения:", self.img_var, self.browse_images)
+
+        # === Выходная папка ===
+        self.create_path_setting(settings_frame, "Выходная папка:", self.out_var, self.browse_output)
+
+    def create_path_setting(self, parent, label_text, var, browse_command):
+        """Создание поля настройки пути"""
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.pack(fill="x", pady=5)
+
+        ctk.CTkLabel(frame, text=label_text, font=("Arial", 12), width=100).pack(side=tk.LEFT)
+
+        entry = ctk.CTkEntry(
+            frame,
+            textvariable=var,
+            placeholder_text=f"Путь к {label_text.lower()}",
+            font=("Arial", 12),
+            height=32
+        )
+        entry.pack(side=tk.LEFT, padx=8, fill="x", expand=True)
+
+        ctk.CTkButton(
+            frame,
+            text="⋯",
+            command=browse_command,
+            width=32,
+            height=32,
+            fg_color="gray30",
+            hover_color="gray40",
+            corner_radius=6,
+            font=("Arial", 14)
+        ).pack(side=tk.RIGHT)
 
     def create_purchase_interface(self):
         """Создание интерфейса для режима закупки"""
-        # Заголовок
-        header_frame = ttk.Frame(self.purchase_frame, padding="10")
-        header_frame.pack(fill=tk.X)
 
-        ttk.Label(header_frame, text="Составление листа закупки",
-                  font=("Arial", 14, "bold")).pack()
+        # === Заголовок ===
+        header_frame = ctk.CTkFrame(self.purchase_frame, fg_color="transparent")
+        header_frame.pack(fill="x", padx=20, pady=(20, 10))
 
-        # Панель поиска
-        search_frame = ttk.Frame(self.purchase_frame, padding="5")
-        search_frame.pack(fill=tk.X)
+        ctk.CTkLabel(
+            header_frame,
+            text="Составление листа закупки",
+            font=("Arial", 18, "bold"),
+            text_color=("black", "white")
+        ).pack()
 
-        ttk.Label(search_frame, text="Поиск по артикулу:").pack(side=tk.LEFT)
-        self.search_var = tk.StringVar()
+        # === Панель поиска ===
+        search_frame = ctk.CTkFrame(self.purchase_frame, fg_color="transparent")
+        search_frame.pack(fill="x", padx=20, pady=(0, 15))
+
+        ctk.CTkLabel(search_frame, text="Поиск по артикулу:", font=("Arial", 12)).pack(side=tk.LEFT, padx=(0, 10))
+
         self.search_var.trace('w', self.on_search_change)
-        search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=30)
+        search_entry = ctk.CTkEntry(
+            search_frame,
+            textvariable=self.search_var,
+            placeholder_text="Введите артикул...",
+            font=("Arial", 12),
+            height=32,
+            width=250
+        )
         search_entry.pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(search_frame, text="Добавить выбранный",
-                   command=self.add_selected_item).pack(side=tk.RIGHT, padx=5)
+        ctk.CTkButton(
+            search_frame,
+            text="Добавить выбранный",
+            command=self.add_selected_item,
+            fg_color="#4CAF50",
+            hover_color="#45a049",
+            text_color="white",
+            corner_radius=8,
+            font=("Arial", 12, "bold"),
+            height=32
+        ).pack(side=tk.RIGHT, padx=5)
 
-        # Список найденных товаров
-        found_frame = ttk.LabelFrame(self.purchase_frame, text="Найденные товары", padding="5")
-        found_frame.pack(fill=tk.X, padx=10, pady=5)
+        # === Найденные товары ===
+        self.create_found_items_section()
 
-        # Listbox для найденных товаров
-        self.found_listbox = tk.Listbox(found_frame, height=4)
-        found_scrollbar = ttk.Scrollbar(found_frame, orient=tk.VERTICAL, command=self.found_listbox.yview)
+        # === Основной список товаров ===
+        self.create_tree_section()
+
+        # === Кнопки управления ===
+        self.create_control_buttons()
+
+    def create_found_items_section(self):
+        """Создание секции найденных товаров"""
+        found_container = ctk.CTkFrame(self.purchase_frame, corner_radius=10)
+        found_container.pack(fill="x", padx=20, pady=(0, 15))
+
+        ctk.CTkLabel(
+            found_container,
+            text="Найденные товары",
+            font=("Arial", 14, "bold"),
+            text_color=("black", "white"),
+            anchor="w"
+        ).pack(anchor="w", padx=15, pady=(10, 5))
+
+        found_inner_frame = ctk.CTkFrame(found_container, fg_color="transparent")
+        found_inner_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+
+        # Определяем цвета в зависимости от темы
+        current_mode = ctk.get_appearance_mode()
+        if current_mode == "Dark":
+            bg_color = "#333333"
+            fg_color = "#FFFFFF"
+            highlight_bg = "#555555"
+        else:
+            bg_color = "#F5F5F5"
+            fg_color = "#000000"
+            highlight_bg = "#D0D0D0"
+
+        self.found_listbox = tk.Listbox(
+            found_inner_frame,
+            height=4,
+            font=("Arial", 11),
+            bg=bg_color,
+            fg=fg_color,
+            selectbackground="#2196F3",
+            selectforeground="white",
+            relief="flat",
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=highlight_bg,
+            highlightcolor="#2196F3"
+        )
+        found_scrollbar = ttk.Scrollbar(found_inner_frame, orient=tk.VERTICAL, command=self.found_listbox.yview)
         self.found_listbox.config(yscrollcommand=found_scrollbar.set)
-        self.found_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        found_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Основной список товаров
-        main_frame = ttk.LabelFrame(self.purchase_frame, text="Список для закупки", padding="5")
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        self.found_listbox.pack(side=tk.LEFT, fill="both", expand=True)
+        found_scrollbar.pack(side=tk.RIGHT, fill="y")
 
-        # Treeview для основного списка
+    def create_tree_section(self):
+        """Создание секции дерева товаров"""
+        tree_container = ctk.CTkFrame(self.purchase_frame, corner_radius=10)
+        tree_container.pack(fill="both", expand=True, padx=20, pady=(0, 15))
+
+        ctk.CTkLabel(
+            tree_container,
+            text="Список для закупки",
+            font=("Arial", 14, "bold"),
+            text_color=("black", "white"),
+            anchor="w"
+        ).pack(anchor="w", padx=15, pady=(10, 5))
+
+        tree_inner_frame = ctk.CTkFrame(tree_container, fg_color="transparent")
+        tree_inner_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+
+        # Treeview
         columns = ("Артикул", "Наименование", "Цена", "Количество")
-        self.tree = ttk.Treeview(main_frame, columns=columns, show="tree headings", height=15)
+        self.tree = ttk.Treeview(
+            tree_inner_frame,
+            columns=columns,
+            show="tree headings",
+            height=15,
+            style="Custom.Treeview"
+        )
 
         # Настройка колонок
-        self.tree.column("#0", width=50, minwidth=50)  # Чекбокс
+        self.tree.column("#0", width=50, minwidth=50, anchor="center")
         self.tree.column("Артикул", width=200, minwidth=150)
         self.tree.column("Наименование", width=250, minwidth=200)
-        self.tree.column("Цена", width=80, minwidth=80)
-        self.tree.column("Количество", width=100, minwidth=80)
+        self.tree.column("Цена", width=80, minwidth=80, anchor="e")
+        self.tree.column("Количество", width=100, minwidth=80, anchor="center")
 
         # Заголовки
         self.tree.heading("#0", text="✓")
@@ -168,45 +378,71 @@ class PurchaseTableGUI:
         self.tree.heading("Цена", text="Цена")
         self.tree.heading("Количество", text="Количество")
 
-        # Scrollbar для дерева
-        tree_scrollbar = ttk.Scrollbar(main_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        # Scrollbar
+        tree_scrollbar = ttk.Scrollbar(tree_inner_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.config(yscrollcommand=tree_scrollbar.set)
 
-        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        tree_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree.pack(side=tk.LEFT, fill="both", expand=True)
+        tree_scrollbar.pack(side=tk.RIGHT, fill="y")
 
         # Биндинг событий
         self.tree.bind("<Double-1>", self.on_tree_double_click)
         self.tree.bind("<Button-1>", self.on_tree_click)
 
-        # Кнопки управления
-        control_frame = ttk.Frame(self.purchase_frame, padding="10")
-        control_frame.pack(fill=tk.X)
+    def create_control_buttons(self):
+        """Создание кнопок управления"""
+        control_frame = ctk.CTkFrame(self.purchase_frame, fg_color="transparent")
+        control_frame.pack(fill="x", padx=20, pady=(15, 20))
 
-        ttk.Button(control_frame, text="Генерировать лист закупки",
-                   command=self.generate_purchase_list,
-                   style="Accent.TButton").pack(side=tk.LEFT, padx=5)
+        ctk.CTkButton(
+            control_frame,
+            text="Генерировать лист закупки",
+            command=self.generate_purchase_list,
+            fg_color="#FF9800",
+            hover_color="#F57C00",
+            text_color="white",
+            corner_radius=8,
+            font=("Arial", 12, "bold"),
+            height=35
+        ).pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(control_frame, text="Назад",
-                   command=self.hide_purchase_interface).pack(side=tk.RIGHT, padx=5)
+        ctk.CTkButton(
+            control_frame,
+            text="Загрузить из JSON",
+            command=self.load_from_json,
+            fg_color="#9E9E9E",
+            hover_color="#757575",
+            text_color="white",
+            corner_radius=8,
+            font=("Arial", 12),
+            height=35
+        ).pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(control_frame, text="Загрузить из JSON",
-                   command=self.load_from_json).pack(side=tk.LEFT, padx=5)
+        ctk.CTkButton(
+            control_frame,
+            text="Сохранить в JSON",
+            command=self.save_to_json,
+            fg_color="#607D8B",
+            hover_color="#455A64",
+            text_color="white",
+            corner_radius=8,
+            font=("Arial", 12),
+            height=35
+        ).pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(control_frame, text="Сохранить в JSON",
-                   command=self.save_to_json).pack(side=tk.LEFT, padx=5)
+        ctk.CTkButton(
+            control_frame,
+            text="Назад",
+            command=self.hide_purchase_interface,
+            fg_color="#F44336",
+            hover_color="#D32F2F",
+            text_color="white",
+            corner_radius=8,
+            font=("Arial", 12, "bold"),
+            height=35
+        ).pack(side=tk.RIGHT, padx=5)
 
-    def load_initial_data(self):
-        """Загрузка начальных данных"""
-        try:
-            data_reader = DataReader(self.database_file, self.images_dir)
-            if data_reader.load_database():
-                self.all_products = data_reader.get_all_products()
-                self.status_bar.config(text=f"Загружено {len(self.all_products)} товаров из базы данных")
-            else:
-                self.status_bar.config(text="Ошибка загрузки базы данных")
-        except Exception as e:
-            self.status_bar.config(text=f"Ошибка: {str(e)}")
+    # === ОБРАБОТЧИКИ СОБЫТИЙ ===
 
     def browse_database(self):
         """Выбор файла базы данных"""
@@ -216,141 +452,57 @@ class PurchaseTableGUI:
         )
         if filename:
             self.db_var.set(filename)
-            self.database_file = filename
+            self.backend.database_file = filename
 
     def browse_images(self):
         """Выбор папки изображений"""
         dirname = filedialog.askdirectory(title="Выберите папку с изображениями")
         if dirname:
             self.img_var.set(dirname)
-            self.images_dir = dirname
+            self.backend.images_dir = dirname
 
     def browse_output(self):
         """Выбор выходной папки"""
         dirname = filedialog.askdirectory(title="Выберите выходную папку")
         if dirname:
             self.out_var.set(dirname)
-            self.output_dir = dirname
+            self.backend.output_dir = dirname
 
     def generate_availability_list(self):
         """Генерация листа наличия"""
-
-        def generate_thread():
-            try:
-                self.status_bar.config(text="Генерация листа наличия...")
-                self.root.update()
-
-                # Обновляем пути из интерфейса
-                self.database_file = self.db_var.get()
-                self.images_dir = self.img_var.get()
-                self.output_dir = self.out_var.get()
-
-                files, errors = generate_general_table(
-                    images_dir=self.images_dir,
-                    database_file=self.database_file,
-                    output_dir=self.output_dir
-                )
-
-                if files:
-                    self.status_bar.config(text=f"Создано файлов: {len(files)}")
-                    # Открываем папку с файлами
-                    self.open_folder(self.output_dir)
-
-                    message = f"Успешно создано {len(files)} файлов:\n"
-                    for file_path in files:
-                        message += f"• {Path(file_path).name}\n"
-
-                    if errors:
-                        message += f"\nОшибок: {len(errors)}"
-
-                    messagebox.showinfo("Готово", message)
-                else:
-                    error_text = "\n".join(errors) if errors else "Неизвестная ошибка"
-                    messagebox.showerror("Ошибка", f"Не удалось создать файлы:\n{error_text}")
-                    self.status_bar.config(text="Ошибка генерации")
-
-            except Exception as e:
-                messagebox.showerror("Ошибка", f"Произошла ошибка:\n{str(e)}")
-                self.status_bar.config(text="Ошибка генерации")
-
-        # Запуск в отдельном потоке
-        thread = threading.Thread(target=generate_thread)
-        thread.daemon = True
-        thread.start()
+        # Обновляем пути в backend
+        self.backend.update_paths(
+            self.db_var.get(),
+            self.img_var.get(),
+            self.out_var.get()
+        )
+        self.backend.generate_availability_list_async()
 
     def show_purchase_interface(self):
         """Показать интерфейс закупки"""
-        # Загружаем начальные данные заказа
-        self.load_default_order()
-        self.purchase_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        self.status_bar.config(text="Режим составления листа закупки")
+        self.backend.load_default_order()
+        self.update_tree()
+        self.purchase_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        self.update_status("Режим составления листа закупки")
 
     def hide_purchase_interface(self):
         """Скрыть интерфейс закупки"""
         self.purchase_frame.pack_forget()
-        self.status_bar.config(text="Готов к работе")
-
-    def load_default_order(self):
-        """Загрузка заказа по умолчанию"""
-        default_order = {
-            "vl-cronier-ployka-cr-2018": 1,
-        }
-
-        self.order_items = {}
-        for article, quantity in default_order.items():
-            product = self.find_product_by_article(article)
-            if product:
-                self.order_items[article] = {
-                    'product': product,
-                    'quantity': quantity,
-                    'enabled': True
-                }
-
-        self.update_tree()
-
-    def find_product_by_article(self, article):
-        """Найти товар по артикулу"""
-        for product in self.all_products:
-            if product['article'] == article:
-                return product
-        return None
-
-    def update_tree(self):
-        """Обновление дерева товаров"""
-        # Очищаем дерево
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-
-        # Добавляем товары
-        for article, item_data in self.order_items.items():
-            product = item_data['product']
-            quantity = item_data['quantity']
-            enabled = item_data['enabled']
-
-            checkbox = "☑" if enabled else "☐"
-            values = (article, product['name'], f"{float(product['price']):.2f}", quantity)
-
-            self.tree.insert("", tk.END, text=checkbox, values=values)
+        self.update_status("Готов к работе")
 
     def on_search_change(self, *args):
         """Обработка изменения поиска"""
-        search_text = self.search_var.get().lower()
-        if len(search_text) < 2:
-            self.found_listbox.delete(0, tk.END)
-            return
-
-        # Поиск товаров
-        found_products = []
-        for product in self.all_products:
-            if search_text in product['article'].lower() or search_text in product['name'].lower():
-                found_products.append(product)
+        search_text = self.search_var.get()
+        found_products = self.backend.search_products(search_text)
 
         # Обновление списка найденных
         self.found_listbox.delete(0, tk.END)
         self.filtered_items = {}
 
-        for i, product in enumerate(found_products[:20]):  # Показываем максимум 20 результатов
-            display_text = f"{product['article']} - {product['name'][:40]}..."
+        for i, product in enumerate(found_products):
+            article = product.get('article', '???')
+            name = product.get('name', 'Без названия')[:40]
+            display_text = f"{article} - {name}..."
             self.found_listbox.insert(tk.END, display_text)
             self.filtered_items[i] = product
 
@@ -358,24 +510,17 @@ class PurchaseTableGUI:
         """Добавить выбранный товар"""
         selection = self.found_listbox.curselection()
         if not selection:
-            messagebox.showwarning("Предупреждение", "Выберите товар для добавления")
+            self.show_error("Предупреждение", "Выберите товар для добавления")
             return
 
         index = selection[0]
-        if index in self.filtered_items:
-            product = self.filtered_items[index]
-            article = product['article']
+        if index not in self.filtered_items:
+            self.show_error("Ошибка", "Товар не найден в кэше")
+            return
 
-            if article in self.order_items:
-                messagebox.showinfo("Информация", "Товар уже есть в списке")
-            else:
-                self.order_items[article] = {
-                    'product': product,
-                    'quantity': 1,
-                    'enabled': True
-                }
-                self.update_tree()
-                messagebox.showinfo("Успех", "Товар добавлен в список")
+        product = self.filtered_items[index]
+        if self.backend.add_product_to_order(product):
+            self.update_tree()
 
     def on_tree_click(self, event):
         """Обработка клика по дереву"""
@@ -383,7 +528,11 @@ class PurchaseTableGUI:
         if region == "tree":
             item = self.tree.identify_row(event.y)
             if item:
-                self.toggle_item_enabled(item)
+                values = self.tree.item(item)['values']
+                if values:
+                    article = values[0]
+                    if self.backend.toggle_item_enabled(article):
+                        self.update_tree()
 
     def on_tree_double_click(self, event):
         """Обработка двойного клика - изменение количества"""
@@ -396,89 +545,59 @@ class PurchaseTableGUI:
             return
 
         article = values[0]
-        current_qty = values[3]
+        try:
+            current_qty = int(values[3])
+        except (ValueError, IndexError):
+            current_qty = 1
 
-        # Диалог изменения количества
-        new_qty = tk.simpledialog.askinteger(
-            "Изменить количество",
-            f"Введите новое количество для {article}:",
-            initialvalue=current_qty,
-            minvalue=0,
-            maxvalue=9999
+        # Используем CTkInputDialog
+        dialog = ctk.CTkInputDialog(
+            title="Изменить количество",
+            text=f"Введите новое количество для {article}:"
         )
+        dialog._entry.delete(0, "end")
+        dialog._entry.insert(0, str(current_qty))
+        new_qty_str = dialog.get_input()
 
-        if new_qty is not None:
-            self.order_items[article]['quantity'] = new_qty
-            self.update_tree()
+        if new_qty_str is None:
+            return  # пользователь нажал Cancel
 
-    def toggle_item_enabled(self, item):
-        """Переключение состояния товара"""
-        values = self.tree.item(item)['values']
-        if not values:
-            return
+        try:
+            new_qty = int(new_qty_str)
+            if self.backend.update_item_quantity(article, new_qty):
+                self.update_tree()
+        except ValueError:
+            self.show_error("Ошибка", "Введите корректное число")
 
-        article = values[0]
-        if article in self.order_items:
-            self.order_items[article]['enabled'] = not self.order_items[article]['enabled']
-            self.update_tree()
+    def update_tree(self):
+        """Обновление дерева товаров"""
+        # Очищаем дерево
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        # Получаем данные от backend
+        display_items = self.backend.get_order_items_for_display()
+
+        # Добавляем товары
+        for item_data in display_items:
+            checkbox = "☑" if item_data['enabled'] else "☐"
+            values = (
+                item_data['article'],
+                item_data['name'],
+                f"{item_data['price']:.2f}",
+                item_data['quantity']
+            )
+            self.tree.insert("", tk.END, text=checkbox, values=values)
 
     def generate_purchase_list(self):
         """Генерация листа закупки"""
-
-        def generate_thread():
-            try:
-                self.status_bar.config(text="Генерация листа закупки...")
-                self.root.update()
-
-                # Формируем заказ из включенных товаров
-                order_dict = {}
-                for article, item_data in self.order_items.items():
-                    if item_data['enabled'] and item_data['quantity'] > 0:
-                        order_dict[article] = item_data['quantity']
-
-                if not order_dict:
-                    messagebox.showwarning("Предупреждение", "Нет товаров для закупки")
-                    self.status_bar.config(text="Нет товаров для закупки")
-                    return
-
-                # Обновляем пути из интерфейса
-                self.database_file = self.db_var.get()
-                self.images_dir = self.img_var.get()
-                self.output_dir = self.out_var.get()
-
-                files, errors = generate_purchase_tables(
-                    images_dir=self.images_dir,
-                    database_file=self.database_file,
-                    order_dict=order_dict,
-                    output_dir=self.output_dir
-                )
-
-                if files:
-                    self.status_bar.config(text=f"Создано файлов: {len(files)}")
-                    # Открываем папку с файлами
-                    self.open_folder(self.output_dir)
-
-                    message = f"Успешно создано {len(files)} файлов:\n"
-                    for file_path in files:
-                        message += f"• {Path(file_path).name}\n"
-
-                    if errors:
-                        message += f"\nОшибок: {len(errors)}"
-
-                    messagebox.showinfo("Готово", message)
-                else:
-                    error_text = "\n".join(errors) if errors else "Неизвестная ошибка"
-                    messagebox.showerror("Ошибка", f"Не удалось создать файлы:\n{error_text}")
-                    self.status_bar.config(text="Ошибка генерации")
-
-            except Exception as e:
-                messagebox.showerror("Ошибка", f"Произошла ошибка:\n{str(e)}")
-                self.status_bar.config(text="Ошибка генерации")
-
-        # Запуск в отдельном потоке
-        thread = threading.Thread(target=generate_thread)
-        thread.daemon = True
-        thread.start()
+        # Обновляем пути в backend
+        self.backend.update_paths(
+            self.db_var.get(),
+            self.img_var.get(),
+            self.out_var.get()
+        )
+        self.backend.generate_purchase_list_async()
 
     def load_from_json(self):
         """Загрузка заказа из JSON файла"""
@@ -487,25 +606,8 @@ class PurchaseTableGUI:
             filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
         )
         if filename:
-            try:
-                with open(filename, 'r', encoding='utf-8') as f:
-                    order_data = json.load(f)
-
-                self.order_items = {}
-                for article, quantity in order_data.items():
-                    product = self.find_product_by_article(article)
-                    if product:
-                        self.order_items[article] = {
-                            'product': product,
-                            'quantity': quantity,
-                            'enabled': True
-                        }
-
+            if self.backend.load_order_from_json(filename):
                 self.update_tree()
-                messagebox.showinfo("Успех", f"Загружено {len(self.order_items)} товаров")
-
-            except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось загрузить файл:\n{str(e)}")
 
     def save_to_json(self):
         """Сохранение заказа в JSON файл"""
@@ -515,49 +617,41 @@ class PurchaseTableGUI:
             filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
         )
         if filename:
-            try:
-                order_data = {}
-                for article, item_data in self.order_items.items():
-                    if item_data['enabled'] and item_data['quantity'] > 0:
-                        order_data[article] = item_data['quantity']
+            self.backend.save_order_to_json(filename)
 
-                with open(filename, 'w', encoding='utf-8') as f:
-                    json.dump(order_data, f, ensure_ascii=False, indent=2)
+    def update_listbox_colors(self):
+        """Обновление цветов listbox при смене темы"""
+        current_mode = ctk.get_appearance_mode()
+        if current_mode == "Dark":
+            bg_color = "#333333"
+            fg_color = "#FFFFFF"
+            highlight_bg = "#555555"
+        else:
+            bg_color = "#F5F5F5"
+            fg_color = "#000000"
+            highlight_bg = "#D0D0D0"
 
-                messagebox.showinfo("Успех", f"Сохранено {len(order_data)} товаров")
-
-            except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось сохранить файл:\n{str(e)}")
-
-    def open_folder(self, folder_path):
-        """Открытие папки в проводнике"""
-        try:
-            folder_path = Path(folder_path).resolve()
-            if folder_path.exists():
-                if platform.system() == "Windows":
-                    os.startfile(folder_path)
-                elif platform.system() == "Darwin":  # macOS
-                    subprocess.run(["open", str(folder_path)])
-                else:  # Linux
-                    subprocess.run(["xdg-open", str(folder_path)])
-        except Exception as e:
-            print(f"Не удалось открыть папку: {e}")
+        self.found_listbox.configure(
+            bg=bg_color,
+            fg=fg_color,
+            highlightbackground=highlight_bg
+        )
 
 
 def main():
-    """Запуск GUI приложения"""
-    root = tk.Tk()
+    """Запуск GUI приложения на customtkinter"""
+    # Создаём главное окно CTk
+    root = ctk.CTk()
+    root.title("Генератор таблиц закупки")
 
-    # Настройка стиля
-    style = ttk.Style()
-    style.theme_use('clam')
+    # Устанавливаем тему и цветовую схему
+    ctk.set_appearance_mode("light")      # "light", "dark", "system"
+    ctk.set_default_color_theme("blue")   # "blue", "green", "dark-blue"
 
+    # Создаём приложение
     app = PurchaseTableGUI(root)
 
-    # Импорт для диалогов
-    import tkinter.simpledialog
-    tk.simpledialog = tkinter.simpledialog
-
+    # Запускаем главный цикл
     root.mainloop()
 
 

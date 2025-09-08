@@ -199,7 +199,7 @@ def main():
     if mode == "gui":
         print("\n🖥️  Запуск графического интерфейса...")
         try:
-            from UI import main as gui_main
+            from ui import main as gui_main
             gui_main()
         except ImportError:
             print("❌ Ошибка: не найден модуль UI.py")
