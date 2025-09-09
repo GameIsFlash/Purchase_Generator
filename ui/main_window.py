@@ -2,12 +2,14 @@
 UI модуль для генератора таблиц закупки.
 Содержит весь пользовательский интерфейс на customtkinter.
 """
-
+import os
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
 import customtkinter as ctk
 from backend.backend import PurchaseTableBackend
 from . import ui_config
+import json
+from .ui_config import CONFIG_FILE
 
 
 class CustomQuantityDialog:
@@ -260,11 +262,39 @@ class PurchaseTableGUI:
         self.img_var = tk.StringVar(value=self.backend.images_dir)
         self.out_var = tk.StringVar(value=self.backend.output_dir)
 
+        # Загружаем сохранённые пути (если есть)
+        self.load_config()
+
         # Создание интерфейса
         self.create_main_interface()
 
         # Загрузка данных при старте
         self.backend.load_initial_data()
+
+    def load_config(self):
+        """Загрузка сохранённых путей из config.json"""
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                self.db_var.set(cfg.get("database_file", self.db_var.get()))
+                self.img_var.set(cfg.get("images_dir", self.img_var.get()))
+                self.out_var.set(cfg.get("output_dir", self.out_var.get()))
+            except Exception as e:
+                print(f"Ошибка при загрузке config.json: {e}")
+
+    def save_config(self):
+        """Сохранение текущих путей в config.json"""
+        cfg = {
+            "database_file": self.db_var.get(),
+            "images_dir": self.img_var.get(),
+            "output_dir": self.out_var.get(),
+        }
+        try:
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"Ошибка при сохранении config.json: {e}")
 
     def setup_backend_callbacks(self):
         """Настройка колбэков для взаимодействия с backend"""
@@ -528,9 +558,9 @@ class PurchaseTableGUI:
         return btn
 
     def create_path_setting(self, parent, label_text, var, browse_command):
-        """Создание поля настройки пути"""
+        """Создание поля настройки пути с автообновлением при потере фокуса"""
         frame = ctk.CTkFrame(parent, fg_color="transparent")
-        frame.pack(fill="x", pady=5)  # Изменено с "none" на "x" для лучшего заполнения
+        frame.pack(fill="x", pady=5)
 
         ctk.CTkLabel(frame, text=label_text, font=("Arial", 12), width=100).pack(side=tk.LEFT)
 
@@ -539,9 +569,26 @@ class PurchaseTableGUI:
             textvariable=var,
             placeholder_text=f"Путь к {label_text.lower()}",
             font=("Arial", 12),
-            height=32  # Увеличено с 15 до 32 для удобства
+            height=32
         )
         entry.pack(side=tk.LEFT, padx=10, fill="x", expand=True)
+
+        # Определяем, какой путь обновлять в зависимости от метки
+        def on_focus_out(event):
+            # Получаем текущее значение из поля
+            new_path = var.get()
+            # Обновляем ВСЕ пути в backend (чтобы не терять остальные)
+            self.backend.update_paths(
+                database_file=self.db_var.get(),
+                images_dir=self.img_var.get(),
+                output_dir=self.out_var.get()
+            )
+            # Если это поле базы данных — перезагружаем данные
+            if label_text == "База данных:":
+                self.backend.load_initial_data()
+
+        # Привязываем событие потери фокуса
+        entry.bind("<FocusOut>", on_focus_out)
 
         ctk.CTkButton(
             frame,
@@ -554,6 +601,17 @@ class PurchaseTableGUI:
             corner_radius=6,
             font=("Arial", 14)
         ).pack(side=tk.RIGHT)
+
+        def on_focus_out(event):
+            new_path = var.get()
+            self.backend.update_paths(
+                database_file=self.db_var.get(),
+                images_dir=self.img_var.get(),
+                output_dir=self.out_var.get()
+            )
+            # Перезагружаем данные, если изменилась база ИЛИ папка изображений
+            if label_text in ["База данных:", "Изображения:"]:
+                self.backend.load_initial_data()
 
     def create_purchase_interface(self):
         """Создание интерфейса для режима закупки (исправленные отступы и центрирование)"""
@@ -803,14 +861,13 @@ class PurchaseTableGUI:
     # === ОБРАБОТЧИКИ СОБЫТИЙ ===
 
     def browse_database(self):
-        """Выбор файла базы данных"""
-        filename = filedialog.askopenfilename(
+        file_path = filedialog.askopenfilename(
             title="Выберите файл базы данных",
-            filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")]
+            filetypes=[("Excel файлы", "*.xlsx *.xls"), ("Все файлы", "*.*")]
         )
-        if filename:
-            self.db_var.set(filename)
-            self.backend.database_file = filename
+        if file_path:
+            self.db_var.set(file_path)
+            self.save_config()
 
     def browse_images(self):
         """Выбор папки изображений"""

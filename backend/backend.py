@@ -6,24 +6,26 @@ from config import FILE_ERRORS, DATA_ERRORS, IMAGE_ERRORS, EXCEL_ERRORS
 from backend.backend_config import DEFAULT_PATHS, ORDER_CONFIG
 from data_engine.data_reader import DataReader
 from utils.file_utils import open_folder
+from pathlib import Path
+import json
 
 # Создаем логгер для этого модуля
 logger = logging.getLogger(__name__)  # <-- Добавлено
-
+CONFIG_FILE = Path("user_paths.json")
 
 class PurchaseTableBackend:
-    """Класс для управления бизнес-логикой генератора таблиц закупки"""
-
     def __init__(self):
-        # Загружаем пути по умолчанию из конфига
-        self.images_dir = DEFAULT_PATHS['images_dir']
-        self.database_file = DEFAULT_PATHS['database_file']
-        self.output_dir = DEFAULT_PATHS['output_dir']
+        self.config_file = CONFIG_FILE
 
-        # Данные для режима закупки
-        self.order_items = {}  # {артикул: {product, quantity, enabled}}
-        # ❗ self.filtered_items удалён — не используется в новой архитектуре
-        self.all_products = []  # список всех товаров из базы
+        # Загружаем сохранённые пути или дефолтные
+        saved_paths = self._load_saved_paths()
+        self.database_file = saved_paths.get("database_file", DEFAULT_PATHS["database_file"])
+        self.images_dir = saved_paths.get("images_dir", DEFAULT_PATHS["images_dir"])
+        self.output_dir = saved_paths.get("output_dir", DEFAULT_PATHS["output_dir"])
+
+        self.data_reader = None
+        self.all_products = []
+        self.order_items = {}
 
         # Колбэки для уведомления UI
         self.status_callback = None
@@ -65,19 +67,49 @@ class PurchaseTableBackend:
         self.images_dir = images_dir
         self.output_dir = output_dir
 
+        # Сохраняем в конфиг, чтобы путь не терялся
+        try:
+            config_data = {
+                "database_file": str(self.database_file),
+                "images_dir": str(self.images_dir),
+                "output_dir": str(self.output_dir)
+            }
+            with open(self.config_file, "w", encoding="utf-8") as f:
+                json.dump(config_data, f, ensure_ascii=False, indent=2)
+            logger.info("Пути сохранены в конфиг")
+        except Exception as e:
+            logger.error(f"Не удалось сохранить пути: {e}")
+
+    def _load_saved_paths(self) -> dict:
+        """Загрузка сохранённых путей из конфига"""
+        try:
+            if Path(self.config_file).exists():
+                with open(self.config_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception as e:
+            logger.error(f"Не удалось загрузить конфиг путей: {e}")
+        return {}
+
     def load_initial_data(self) -> bool:
         """Загрузка начальных данных из базы"""
+        if not self.database_file or not Path(self.database_file).exists():
+            self.show_error("Ошибка", f"Файл базы данных не найден:\n{self.database_file}")
+            self.update_status("Ошибка: база данных не найдена")
+            return False
+
         try:
-            data_reader = DataReader(self.database_file, self.images_dir)
-            if data_reader.load_database():
-                self.all_products = data_reader.get_all_products()
+            self.data_reader = DataReader(self.database_file, self.images_dir)
+            if self.data_reader.load_database():
+                self.all_products = self.data_reader.get_all_products()
                 self.update_status(f"Загружено {len(self.all_products)} товаров из базы данных")
                 return True
             else:
+                self.show_error("Ошибка", "Не удалось загрузить базу данных")
                 self.update_status("Ошибка загрузки базы данных")
                 return False
         except Exception as e:
-            self.update_status(f"Ошибка: {str(e)}")
+            self.show_error("Ошибка", f"Произошла ошибка при загрузке базы:\n{e}")
+            self.update_status("Ошибка загрузки базы данных")
             return False
 
     def generate_availability_list_async(self):
@@ -272,7 +304,7 @@ class PurchaseTableBackend:
         data_reader = DataReader(self.database_file, self.images_dir)
         if not data_reader.load_database():
             return []
-        suppliers = data_reader.get_product_info(article)
+        suppliers = self.data_reader.get_product_info(article) if self.data_reader else []
         return suppliers if suppliers else []
 
     def update_item_supplier(self, article: str, new_supplier: str) -> bool:
