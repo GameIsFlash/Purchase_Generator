@@ -1,10 +1,14 @@
 import threading
 import json
 from pathlib import Path
+import logging  # <-- Добавлено
 from config import FILE_ERRORS, DATA_ERRORS, IMAGE_ERRORS, EXCEL_ERRORS
 from backend.backend_config import DEFAULT_PATHS, ORDER_CONFIG
 from data_engine.data_reader import DataReader
 from utils.file_utils import open_folder
+
+# Создаем логгер для этого модуля
+logger = logging.getLogger(__name__)  # <-- Добавлено
 
 
 class PurchaseTableBackend:
@@ -77,31 +81,73 @@ class PurchaseTableBackend:
             return False
 
     def generate_availability_list_async(self):
-        """Асинхронная генерация листа наличия"""
+        """Асинхронная генерация листа наличия ПО КАЖДОМУ ПОСТАВЩИКУ."""
 
         def generate_thread():
             try:
-                self.update_status("Генерация листа наличия...")
+                self.update_status("Генерация листов наличия...")
 
-                from main import generate_general_table  # импорт внутри функции для избежания циклических зависимостей
+                # Инициализируем генератор Excel и читатель данных
+                from data_engine.excel_generator import ExcelGenerator
+                from data_engine.data_reader import DataReader
 
-                files, errors = generate_general_table(
-                    images_dir=self.images_dir,
-                    database_file=self.database_file,
-                    output_dir=self.output_dir
-                )
+                excel_generator = ExcelGenerator(output_dir=self.output_dir)
+                data_reader = DataReader(self.database_file, self.images_dir)
+
+                if not data_reader.load_database():
+                    raise Exception("Не удалось загрузить базу данных")
+
+                # Получаем все товары
+                all_products = data_reader.get_all_products()
+                if not all_products:
+                    raise Exception("База данных пуста")
+
+                # Группируем товары по поставщикам
+                suppliers_dict = {}
+                for product in all_products:
+                    supplier = product.get('supplier', 'Неизвестный поставщик')
+                    if supplier not in suppliers_dict:
+                        suppliers_dict[supplier] = []
+                    suppliers_dict[supplier].append(product)
+
+                files = []
+                errors = []
+
+                # Генерируем отдельный файл для КАЖДОГО поставщика
+                for supplier_name, supplier_items in suppliers_dict.items():
+                    try:
+                        # Формируем данные для генератора
+                        supplier_data = {
+                            'supplier': supplier_name,
+                            'items': []
+                        }
+
+                        for product in supplier_items:
+                            # Обрабатываем изображение
+                            processed_image = data_reader.process_image(product['article'])
+                            supplier_data['items'].append({
+                                'article': product['article'],
+                                'name': product['name'],
+                                'price': float(product['price']),
+                                'processed_image': processed_image
+                            })
+
+                        # Генерируем файл
+                        file_path = excel_generator.generate_general_table(supplier_data)
+                        if file_path:
+                            files.append(file_path)
+
+                    except Exception as e:
+                        errors.append(f"Ошибка генерации для {supplier_name}: {str(e)}")
 
                 if files:
                     self.update_status(f"Создано файлов: {len(files)}")
                     open_folder(self.output_dir)
-
                     message = f"Успешно создано {len(files)} файлов:\n"
                     for file_path in files:
                         message += f"• {Path(file_path).name}\n"
-
                     if errors:
                         message += f"\nОшибок: {len(errors)}"
-
                     self.show_success("Готово", message)
                 else:
                     error_text = "\n".join(errors) if errors else "Неизвестная ошибка"
@@ -109,8 +155,10 @@ class PurchaseTableBackend:
                     self.update_status("Ошибка генерации")
 
             except Exception as e:
-                self.show_error("Ошибка", EXCEL_ERRORS['EXCEL_GENERATION_ERROR'].format(str(e)))
+                error_msg = EXCEL_ERRORS['EXCEL_GENERATION_ERROR'].format(str(e))
+                self.show_error("Ошибка", error_msg)
                 self.update_status("Ошибка генерации")
+                logger.error(error_msg)
 
         # Запуск в отдельном потоке
         thread = threading.Thread(target=generate_thread)
@@ -253,6 +301,10 @@ class PurchaseTableBackend:
         self.order_items[article]['product']['price'] = selected_product_info['price']
 
         return True
+
+    def get_all_products(self) -> list[dict]:
+        """Получить ВСЕ товары из базы данных для отображения при пустом поиске."""
+        return self.all_products.copy()  # Возвращаем копию, чтобы избежать неожиданных изменений
 
     def get_order_items_for_display(self) -> list[dict]:
         """Получить список товаров для отображения в UI, включая информацию о поставщике."""

@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
 import customtkinter as ctk
 from backend.backend import PurchaseTableBackend
+from . import ui_config
 
 
 class CustomQuantityDialog:
@@ -114,7 +115,7 @@ class CustomSupplierSelector:
         # Создаем скроллируемый фрейм
         self.scrollable_frame = ctk.CTkScrollableFrame(
             self.frame,
-            width=width-20,
+            width=width - 20,
             height=min(height * len(suppliers), 180),
             corner_radius=0
         )
@@ -122,8 +123,20 @@ class CustomSupplierSelector:
 
         # Добавляем кнопки для каждого поставщика
         for supplier in suppliers:
-            btn_color = "#2196F3" if supplier == current_supplier else "#404040"
-            hover_color = "#1976D2" if supplier == current_supplier else "#505050"
+            if supplier == current_supplier:
+                if ctk.get_appearance_mode() == "Dark":
+                    btn_color = "#2196F3"
+                    hover_color = "#1976D2"
+                else:
+                    btn_color = "#1E88E5"  # Чуть ярче для светлой темы
+                    hover_color = "#1565C0"
+            else:
+                if ctk.get_appearance_mode() == "Dark":
+                    btn_color = "#404040"
+                    hover_color = "#505050"
+                else:
+                    btn_color = "#E0E0E0"
+                    hover_color = "#BDBDBD"
 
             btn = ctk.CTkButton(
                 self.scrollable_frame,
@@ -165,11 +178,11 @@ class PurchaseTableGUI:
         self.root.resizable(True, True)
 
         # Устанавливаем тему customtkinter
-        ctk.set_appearance_mode("light")
+        ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
         # Переменная для отслеживания текущей темы
-        self.current_theme = "light"
+        self.current_theme = "dark"
 
         # Инициализация backend
         self.backend = PurchaseTableBackend()
@@ -251,6 +264,55 @@ class PurchaseTableGUI:
 
         update_treeview_style()
 
+    def update_theme_dependent_widgets(self):
+        """Обновляет цвета виджетов, зависящих от темы."""
+        # Обновляем Treeview
+        self.setup_treeview_style()
+        # Обновляем Listbox
+        self.update_listbox_colors()
+
+        # Обновляем кнопку переключения темы (если она существует)
+        if hasattr(self, 'theme_button') and self.theme_button:
+            if self.current_theme == "dark":
+                self.theme_button.configure(fg_color="gray20", hover_color="#F2F7F2", text_color="white")
+            else:
+                self.theme_button.configure(fg_color="#F2F7F2", hover_color="gray20", text_color="gray20")
+
+        if hasattr(self, 'settings_wrapper') and self.settings_wrapper:
+            self.settings_wrapper.destroy()
+            self.create_settings_frame_in_main()
+
+    def create_settings_frame_in_main(self):
+        """Создание фрейма настроек путей в основном интерфейсе (для возможности пересоздания)."""
+        # Правая часть: Подложка для настроек путей
+        self.settings_wrapper = ctk.CTkFrame(self.main_top_container, corner_radius=10)
+        self.settings_wrapper.pack(side=tk.RIGHT, fill="both", expand=True, padx=(10, 0), pady=0)
+
+        # Внутренний контейнер с отступами 10px
+        settings_container = ctk.CTkFrame(self.settings_wrapper, fg_color="transparent")
+        settings_container.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Заголовок "Настройки путей"
+        header_label = ctk.CTkLabel(
+            settings_container,
+            text="Настройки путей",
+            font=("Arial", 12, "bold"),
+            text_color=("black", "white")
+        )
+        header_label.pack(anchor="w", pady=(0, 5))  # Отступ снизу 5px
+
+        # Внутренний контейнер для полей ввода
+        settings_frame = ctk.CTkFrame(settings_container, fg_color="transparent")
+        settings_frame.pack(fill="x")
+
+        # === База данных ===
+        self.create_path_setting(settings_frame, "База данных:", self.db_var, self.browse_database)
+
+        # === Папка изображений ===
+        self.create_path_setting(settings_frame, "Изображения:", self.img_var, self.browse_images)
+        # === Выходная папка ===
+        self.create_path_setting(settings_frame, "Выходная папка:", self.out_var, self.browse_output)
+
     def toggle_theme(self):
         """Переключение темы"""
         if self.current_theme == "light":
@@ -260,10 +322,8 @@ class PurchaseTableGUI:
             self.current_theme = "light"
             ctk.set_appearance_mode("light")
 
-        # Обновляем стили
-        self.setup_treeview_style()
-        if hasattr(self, 'found_listbox'):
-            self.update_listbox_colors()
+        # Обновляем стили и виджеты
+        self.update_theme_dependent_widgets()
 
     def create_main_interface(self):
         """Создание основного интерфейса на customtkinter"""
@@ -280,42 +340,82 @@ class PurchaseTableGUI:
         title_label.pack(side=tk.LEFT)
 
         # Кнопка переключения темы
-        theme_btn = ctk.CTkButton(
+        self.theme_button = ctk.CTkButton(
             title_frame,
             text="Тема",
             command=self.toggle_theme,
             width=48,
             height=36,
-            fg_color="#606060",
-            hover_color="#333333",
+            fg_color="gray" if self.current_theme == "dark" else "gray20",  # Светлый серый в светлой теме
+            hover_color="gray" if self.current_theme == "dark" else "gray20",  # Чуть темнее при наведении
+            text_color="black",
             font=("Arial", 12)
         )
-        theme_btn.pack(side=tk.RIGHT)
+        self.theme_button.pack(side=tk.RIGHT)
 
-        # === Основные кнопки ===
-        buttons_frame = ctk.CTkFrame(self.root, fg_color="transparent")
-        buttons_frame.pack(fill="x", padx=20, pady=(0, 20))
+        # === Горизонтальный контейнер для кнопок и настроек (40% / 60%) ===
+        self.main_top_container = ctk.CTkFrame(self.root, fg_color="transparent")
+        self.main_top_container.pack(fill="x", padx=20, pady=(0, 20))
 
+        # --- Левая часть: Подложка для кнопок ---
+        buttons_wrapper = ctk.CTkFrame(self.main_top_container, corner_radius=10)
+        buttons_wrapper.pack(side=tk.LEFT, fill="both", expand=False, padx=(0, 10), pady=0)
+
+        # Внутренний контейнер с отступами 10px
+        buttons_container = ctk.CTkFrame(buttons_wrapper, fg_color="transparent")
+        buttons_container.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Основные кнопки (вертикально, выровнены по левому краю)
         # Кнопка "Лист наличия"
         availability_btn = self.create_button(
-            buttons_frame, "Лист наличия", self.generate_availability_list,
-            fg_color="#4CAF50", hover_color="#45a049"
+            buttons_container, "Лист наличия", self.generate_availability_list,
+            fg_color="#4CAF50", hover_color="#45a049",
+            side=tk.TOP, pady=(0, 10), anchor="w"  # Выравнивание по левому краю
         )
 
         # Кнопка "Лист закупки"
         purchase_btn = self.create_button(
-            buttons_frame, "Лист закупки", self.show_purchase_interface,
-            fg_color="#2196F3", hover_color="#1976D2"
+            buttons_container, "Лист закупки", self.show_purchase_interface,
+            fg_color="#2196F3", hover_color="#1976D2",
+            side=tk.TOP, pady=(0, 10), anchor="w"
         )
 
         # Кнопка "Генерировать лист закупки"
         generate_btn = self.create_button(
-            buttons_frame, "Генерировать лист закупки", self.generate_purchase_list,
-            fg_color="#FF9800", hover_color="#F57C00"
+            buttons_container, "Генерировать лист закупки", self.generate_purchase_list,
+            fg_color="#FF9800", hover_color="#F57C00",
+            side=tk.TOP, anchor="w"  # Без нижнего отступа у последней кнопки
         )
 
-        # === Настройки путей ===
-        self.create_settings_frame()
+        # --- Правая часть: Подложка для настроек путей ---
+        settings_wrapper = ctk.CTkFrame(self.main_top_container, corner_radius=10)
+        settings_wrapper.pack(side=tk.RIGHT, fill="both", expand=True, padx=(10, 0), pady=0)
+
+        # Внутренний контейнер с отступами 10px
+        settings_container = ctk.CTkFrame(settings_wrapper, fg_color="transparent")
+        settings_container.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Заголовок "Настройки путей"
+        header_label = ctk.CTkLabel(
+            settings_container,
+            text="Настройки путей",
+            font=("Arial", 12, "bold"),
+            text_color=("black", "white")
+        )
+        header_label.pack(anchor="w", pady=(0, 5))  # Отступ снизу 5px
+
+        # Внутренний контейнер для полей ввода
+        settings_frame = ctk.CTkFrame(settings_container, fg_color="transparent")
+        settings_frame.pack(fill="x")
+
+        # === База данных ===
+        self.create_path_setting(settings_frame, "База данных:", self.db_var, self.browse_database)
+
+        # === Папка изображений ===
+        self.create_path_setting(settings_frame, "Изображения:", self.img_var, self.browse_images)
+
+        # === Выходная папка ===
+        self.create_path_setting(settings_frame, "Выходная папка:", self.out_var, self.browse_output)
 
         # === Фрейм для интерфейса закупки (изначально скрыт) ===
         self.purchase_frame = ctk.CTkFrame(self.root, fg_color="transparent")
@@ -339,8 +439,9 @@ class PurchaseTableGUI:
                       width=180, height=45,
                       fg_color="#3B8ED0", hover_color="#367CBA",
                       text_color="white", corner_radius=10,
-                      side=tk.LEFT, padx=(0, 15), pady=0,
-                      font=("Arial", 12, "bold")):
+                      side=tk.LEFT, padx=(0, 0), pady=0,
+                      font=("Arial", 12, "bold"),
+                      anchor="center"):  # <-- Добавлен параметр anchor
         """Создаёт и упаковывает кнопку CTkButton"""
         btn = ctk.CTkButton(
             parent,
@@ -354,41 +455,13 @@ class PurchaseTableGUI:
             corner_radius=corner_radius,
             font=font
         )
-        btn.pack(side=side, padx=padx, pady=pady)
+        btn.pack(side=side, padx=padx, pady=pady, anchor=anchor)  # <-- Добавлен anchor в pack
         return btn
-
-    def create_settings_frame(self):
-        """Создание фрейма настроек на customtkinter"""
-        # Основной фрейм настроек
-        settings_container = ctk.CTkFrame(self.root, corner_radius=10)
-        settings_container.pack(fill="x", padx=20, pady=(10, 20))
-
-        # Заголовок "Настройки путей"
-        header_label = ctk.CTkLabel(
-            settings_container,
-            text="Настройки путей",
-            font=("Arial", 14, "bold"),
-            text_color=("black", "white")
-        )
-        header_label.pack(anchor="w", padx=15, pady=(10, 5))
-
-        # Внутренний контейнер для полей
-        settings_frame = ctk.CTkFrame(settings_container, fg_color="transparent")
-        settings_frame.pack(fill="x", padx=15, pady=(0, 15))
-
-        # === База данных ===
-        self.create_path_setting(settings_frame, "База данных:", self.db_var, self.browse_database)
-
-        # === Папка изображений ===
-        self.create_path_setting(settings_frame, "Изображения:", self.img_var, self.browse_images)
-
-        # === Выходная папка ===
-        self.create_path_setting(settings_frame, "Выходная папка:", self.out_var, self.browse_output)
 
     def create_path_setting(self, parent, label_text, var, browse_command):
         """Создание поля настройки пути"""
         frame = ctk.CTkFrame(parent, fg_color="transparent")
-        frame.pack(fill="x", pady=5)
+        frame.pack(fill="x", pady=5)  # Изменено с "none" на "x" для лучшего заполнения
 
         ctk.CTkLabel(frame, text=label_text, font=("Arial", 12), width=100).pack(side=tk.LEFT)
 
@@ -397,9 +470,9 @@ class PurchaseTableGUI:
             textvariable=var,
             placeholder_text=f"Путь к {label_text.lower()}",
             font=("Arial", 12),
-            height=32
+            height=32  # Увеличено с 15 до 32 для удобства
         )
-        entry.pack(side=tk.LEFT, padx=8, fill="x", expand=True)
+        entry.pack(side=tk.LEFT, padx=10, fill="x", expand=True)
 
         ctk.CTkButton(
             frame,
@@ -407,8 +480,8 @@ class PurchaseTableGUI:
             command=browse_command,
             width=32,
             height=32,
-            fg_color="gray30",
-            hover_color="gray40",
+            fg_color=ui_config.BUTTON_COLORS['browse'][0],
+            hover_color=ui_config.BUTTON_COLORS['browse'][1],
             corner_radius=6,
             font=("Arial", 14)
         ).pack(side=tk.RIGHT)
@@ -417,7 +490,7 @@ class PurchaseTableGUI:
         """Создание интерфейса для режима закупки"""
         # === Заголовок ===
         header_frame = ctk.CTkFrame(self.purchase_frame, fg_color="transparent")
-        header_frame.pack(fill="x", padx=20, pady=(20, 10))
+        header_frame.pack(fill="x", padx=20, pady=(0, 10))
 
         ctk.CTkLabel(
             header_frame,
