@@ -1,31 +1,25 @@
-"""
-Backend модуль для генератора таблиц закупки.
-Содержит всю бизнес-логику приложения.
-"""
-
 import threading
-import subprocess
-import platform
-from pathlib import Path
-import os
 import json
-from main import generate_general_table, generate_purchase_tables
-from data_reader import DataReader
+from pathlib import Path
+from config import FILE_ERRORS, DATA_ERRORS, IMAGE_ERRORS, EXCEL_ERRORS
+from backend.backend_config import DEFAULT_PATHS, ORDER_CONFIG
+from data_engine.data_reader import DataReader
+from utils.file_utils import open_folder
 
 
 class PurchaseTableBackend:
     """Класс для управления бизнес-логикой генератора таблиц закупки"""
 
     def __init__(self):
-        # Настройки по умолчанию
-        self.images_dir = "data/images"
-        self.database_file = "data/table/database.xlsx"
-        self.output_dir = "output"
+        # Загружаем пути по умолчанию из конфига
+        self.images_dir = DEFAULT_PATHS['images_dir']
+        self.database_file = DEFAULT_PATHS['database_file']
+        self.output_dir = DEFAULT_PATHS['output_dir']
 
         # Данные для режима закупки
-        self.order_items = {}
-        self.filtered_items = {}
-        self.all_products = []
+        self.order_items = {}  # {артикул: {product, quantity, enabled}}
+        # ❗ self.filtered_items удалён — не используется в новой архитектуре
+        self.all_products = []  # список всех товаров из базы
 
         # Колбэки для уведомления UI
         self.status_callback = None
@@ -67,7 +61,7 @@ class PurchaseTableBackend:
         self.images_dir = images_dir
         self.output_dir = output_dir
 
-    def load_initial_data(self):
+    def load_initial_data(self) -> bool:
         """Загрузка начальных данных из базы"""
         try:
             data_reader = DataReader(self.database_file, self.images_dir)
@@ -89,6 +83,8 @@ class PurchaseTableBackend:
             try:
                 self.update_status("Генерация листа наличия...")
 
+                from main import generate_general_table  # импорт внутри функции для избежания циклических зависимостей
+
                 files, errors = generate_general_table(
                     images_dir=self.images_dir,
                     database_file=self.database_file,
@@ -97,7 +93,7 @@ class PurchaseTableBackend:
 
                 if files:
                     self.update_status(f"Создано файлов: {len(files)}")
-                    self.open_folder(self.output_dir)
+                    open_folder(self.output_dir)
 
                     message = f"Успешно создано {len(files)} файлов:\n"
                     for file_path in files:
@@ -113,7 +109,7 @@ class PurchaseTableBackend:
                     self.update_status("Ошибка генерации")
 
             except Exception as e:
-                self.show_error("Ошибка", f"Произошла ошибка:\n{str(e)}")
+                self.show_error("Ошибка", EXCEL_ERRORS['EXCEL_GENERATION_ERROR'].format(str(e)))
                 self.update_status("Ошибка генерации")
 
         # Запуск в отдельном потоке
@@ -121,39 +117,44 @@ class PurchaseTableBackend:
         thread.daemon = True
         thread.start()
 
-    def load_default_order(self):
-        """Загрузка заказа по умолчанию"""
-        default_order = {
-            "vl-cronier-ployka-cr-2018": 1,
-        }
-
+    def load_default_order(self) -> int:
+        """Загрузка заказа по умолчанию из конфига с поддержкой поставщиков."""
+        default_order = ORDER_CONFIG['default_order']
         self.order_items = {}
         loaded_count = 0
 
         for article, quantity in default_order.items():
+            # Используем метод add_product_to_order, который уже поддерживает поставщиков
             product = self.find_product_by_article(article)
             if product:
-                self.order_items[article] = {
-                    'product': product,
-                    'quantity': quantity,
-                    'enabled': True
-                }
-                loaded_count += 1
+                # Временно устанавливаем количество, чтобы не вызывать show_success
+                # Сохраняем текущие колбэки
+                original_success_callback = self.success_callback
+                # Временно отключаем success_callback, чтобы не показывать сообщение для каждого товара
+                self.success_callback = None
+
+                if self.add_product_to_order(product):
+                    # Восстанавливаем оригинальное количество, так как add_product_to_order ставит 1
+                    self.order_items[article]['quantity'] = quantity
+                    loaded_count += 1
+
+                # Восстанавливаем колбэк
+                self.success_callback = original_success_callback
 
         self.update_status(f"Загружен заказ по умолчанию ({loaded_count} товаров)")
         return loaded_count
 
-    def find_product_by_article(self, article):
+    def find_product_by_article(self, article: str) -> dict | None:
         """Найти товар по артикулу"""
         for product in self.all_products:
             if product['article'] == article:
                 return product
         return None
 
-    def search_products(self, search_text):
+    def search_products(self, search_text: str) -> list[dict]:
         """Поиск товаров по артикулу или названию"""
         search_text = search_text.lower().strip()
-        if len(search_text) < 2:
+        if len(search_text) < ORDER_CONFIG['min_search_length']:
             return []
 
         found_products = []
@@ -163,12 +164,11 @@ class PurchaseTableBackend:
             if search_text in article or search_text in name:
                 found_products.append(product)
 
-        return found_products[:20]  # Максимум 20 результатов
+        return found_products[:ORDER_CONFIG['max_search_results']]
 
-    def add_product_to_order(self, product):
-        """Добавить товар в заказ"""
+    def add_product_to_order(self, product: dict) -> bool:
+        """Добавить товар в заказ. Автоматически находит всех поставщиков."""
         article = product.get('article')
-
         if not article:
             self.show_error("Ошибка", "У товара отсутствует артикул")
             return False
@@ -176,47 +176,92 @@ class PurchaseTableBackend:
         if article in self.order_items:
             self.show_message("Информация", "Товар уже есть в списке")
             return False
-        else:
-            self.order_items[article] = {
-                'product': product,
-                'quantity': 1,
-                'enabled': True
-            }
-            self.show_success("Успех", f"Товар '{article}' добавлен в список")
-            return True
 
-    def update_item_quantity(self, article, new_quantity):
+        # Получаем всех поставщиков для этого артикула
+        all_suppliers = self.find_all_suppliers_for_article(article)
+        if not all_suppliers:
+            self.show_error("Ошибка", f"Не удалось найти поставщиков для артикула {article}")
+            return False
+
+        # Выбираем поставщика с минимальной ценой по умолчанию
+        default_supplier = min(all_suppliers, key=lambda x: x['price'])
+
+        self.order_items[article] = {
+            'product': product,  # Основная информация (наименование и т.д.)
+            'all_suppliers': all_suppliers,  # Список всех поставщиков
+            'selected_supplier': default_supplier['supplier'],  # Выбранный поставщик
+            'quantity': 1,
+            'enabled': True
+        }
+        self.show_success("Успех", f"Товар '{article}' добавлен в список")
+        return True
+
+    def update_item_quantity(self, article: str, new_quantity: int) -> bool:
         """Обновить количество товара"""
         if new_quantity < 0:
             self.show_error("Ошибка", "Количество не может быть меньше 0")
             return False
-        if new_quantity > 9999:
-            self.show_error("Ошибка", "Максимальное количество — 9999")
+        if new_quantity > ORDER_CONFIG['max_quantity']:
+            self.show_error("Ошибка", f"Максимальное количество — {ORDER_CONFIG['max_quantity']}")
             return False
 
-        if article in self.order_items:
-            old_quantity = self.order_items[article]['quantity']
-            self.order_items[article]['quantity'] = new_quantity
-            print(f"DEBUG: Количество товара '{article}' изменено с {old_quantity} на {new_quantity}")
-            return True
-        else:
-            print(f"DEBUG: Товар '{article}' не найден в order_items")
+        if article not in self.order_items:
+            self.show_error("Ошибка", f"Товар '{article}' не найден в заказе")
             return False
 
-    def toggle_item_enabled(self, article):
+        self.order_items[article]['quantity'] = new_quantity
+        return True
+
+    def toggle_item_enabled(self, article: str) -> bool:
         """Переключить состояние товара (включен/выключен)"""
         if article in self.order_items:
             self.order_items[article]['enabled'] = not self.order_items[article]['enabled']
             return True
         return False
 
-    def get_order_items_for_display(self):
-        """Получить список товаров для отображения"""
+    def find_all_suppliers_for_article(self, article: str) -> list[dict]:
+        """Найти всех поставщиков для заданного артикула."""
+        data_reader = DataReader(self.database_file, self.images_dir)
+        if not data_reader.load_database():
+            return []
+        suppliers = data_reader.get_product_info(article)
+        return suppliers if suppliers else []
+
+    def update_item_supplier(self, article: str, new_supplier: str) -> bool:
+        """Обновить выбранного поставщика для товара и обновить цену."""
+        if article not in self.order_items:
+            return False
+
+        # Проверяем, что новый поставщик есть в списке доступных
+        available_suppliers = [s['supplier'] for s in self.order_items[article]['all_suppliers']]
+        if new_supplier not in available_suppliers:
+            return False
+
+        # Находим полную информацию о товаре у выбранного поставщика
+        selected_product_info = next(
+            (s for s in self.order_items[article]['all_suppliers'] if s['supplier'] == new_supplier),
+            None
+        )
+
+        if not selected_product_info:
+            return False
+
+        # Обновляем выбранного поставщика
+        self.order_items[article]['selected_supplier'] = new_supplier
+
+        # Обновляем ЦЕНУ в основном объекте товара, чтобы UI отображал актуальные данные
+        self.order_items[article]['product']['price'] = selected_product_info['price']
+
+        return True
+
+    def get_order_items_for_display(self) -> list[dict]:
+        """Получить список товаров для отображения в UI, включая информацию о поставщике."""
         display_items = []
         for article, item_data in self.order_items.items():
             product = item_data['product']
             quantity = item_data['quantity']
             enabled = item_data['enabled']
+            selected_supplier = item_data['selected_supplier']
 
             try:
                 price = float(product.get('price', 0))
@@ -228,47 +273,90 @@ class PurchaseTableBackend:
                 'name': product.get('name', 'Неизвестно'),
                 'price': price,
                 'quantity': quantity,
-                'enabled': enabled
+                'enabled': enabled,
+                'selected_supplier': selected_supplier,  # Новое поле
+                'all_suppliers': [s['supplier'] for s in item_data['all_suppliers']]  # Список имен для UI
             })
 
         return display_items
 
     def generate_purchase_list_async(self):
-        """Асинхронная генерация листа закупки"""
+        """Асинхронная генерация листа закупки с использованием ExcelGenerator."""
 
         def generate_thread():
             try:
                 self.update_status("Генерация листа закупки...")
 
-                # Формируем заказ из включенных товаров
-                order_dict = {}
+                # Формируем заказ, сгруппированный по ПОСТАВЩИКАМ
+                suppliers_order = {}  # {поставщик: {артикул: количество, ...}}
                 for article, item_data in self.order_items.items():
-                    if item_data['enabled'] and item_data['quantity'] > 0:
-                        order_dict[article] = item_data['quantity']
+                    if not (item_data['enabled'] and item_data['quantity'] > 0):
+                        continue
 
-                if not order_dict:
+                    selected_supplier = item_data['selected_supplier']
+                    if selected_supplier not in suppliers_order:
+                        suppliers_order[selected_supplier] = {}
+
+                    suppliers_order[selected_supplier][article] = item_data['quantity']
+
+                if not suppliers_order:
                     self.show_error("Предупреждение", "Нет товаров для закупки")
                     self.update_status("Нет товаров для закупки")
                     return
 
-                files, errors = generate_purchase_tables(
-                    images_dir=self.images_dir,
-                    database_file=self.database_file,
-                    order_dict=order_dict,
-                    output_dir=self.output_dir
-                )
+                # Инициализируем генератор Excel
+                from data_engine.excel_generator import ExcelGenerator
+                excel_generator = ExcelGenerator(output_dir=self.output_dir)
+
+                files = []
+                errors = []
+
+                # Генерируем отдельный файл для КАЖДОГО поставщика
+                for supplier_name, supplier_items in suppliers_order.items():
+                    try:
+                        # Формируем данные для генератора
+                        supplier_data = {
+                            'supplier': supplier_name,
+                            'items': []
+                        }
+
+                        data_reader = DataReader(self.database_file, self.images_dir)
+                        if not data_reader.load_database():
+                            raise Exception("Не удалось загрузить базу данных")
+
+                        for article, quantity in supplier_items.items():
+                            # Находим полную информацию о товаре у этого поставщика
+                            all_suppliers = self.find_all_suppliers_for_article(article)
+                            selected_product = next((p for p in all_suppliers if p['supplier'] == supplier_name), None)
+                            if selected_product:
+                                # Обрабатываем изображение
+                                processed_image = data_reader.process_image(article)
+                                supplier_data['items'].append({
+                                    'article': article,
+                                    'name': selected_product['name'],
+                                    'price': float(selected_product['price']),
+                                    'quantity': quantity,
+                                    'processed_image': processed_image
+                                })
+                            else:
+                                errors.append(f"Товар {article} не найден у поставщика {supplier_name}")
+
+                        if supplier_data['items']:
+                            # Генерируем файл
+                            file_path = excel_generator.generate_table(supplier_data)
+                            files.append(file_path)
+
+                    except Exception as e:
+                        errors.append(f"Ошибка генерации для {supplier_name}: {str(e)}")
 
                 if files:
                     self.update_status(f"Создано файлов: {len(files)}")
-                    self.open_folder(self.output_dir)
-
+                    open_folder(self.output_dir)
                     message = f"Успешно создано {len(files)} файлов:\n"
                     for file_path in files:
                         message += f"• {Path(file_path).name}\n"
-
                     if errors:
                         message += f"\nОшибок: {len(errors)}"
-
                     self.show_success("Готово", message)
                 else:
                     error_text = "\n".join(errors) if errors else "Неизвестная ошибка"
@@ -284,7 +372,7 @@ class PurchaseTableBackend:
         thread.daemon = True
         thread.start()
 
-    def load_order_from_json(self, filename):
+    def load_order_from_json(self, filename: str) -> bool:
         """Загрузить заказ из JSON файла"""
         try:
             with open(filename, 'r', encoding='utf-8') as f:
@@ -327,7 +415,7 @@ class PurchaseTableBackend:
             self.show_error("Ошибка загрузки", f"Не удалось загрузить файл:\n{str(e)}")
             return False
 
-    def save_order_to_json(self, filename):
+    def save_order_to_json(self, filename: str) -> bool:
         """Сохранить заказ в JSON файл"""
         try:
             order_data = {}
@@ -347,22 +435,3 @@ class PurchaseTableBackend:
         except Exception as e:
             self.show_error("Ошибка сохранения", f"Не удалось сохранить файл:\n{str(e)}")
             return False
-
-    def open_folder(self, folder_path):
-        """Открыть папку в проводнике"""
-        try:
-            folder_path = Path(folder_path).resolve()
-            if not folder_path.exists():
-                self.show_error("Ошибка", f"Папка не существует:\n{folder_path}")
-                return
-
-            if platform.system() == "Windows":
-                os.startfile(folder_path)
-            elif platform.system() == "Darwin":  # macOS
-                subprocess.run(["open", str(folder_path)], check=True)
-            else:  # Linux
-                subprocess.run(["xdg-open", str(folder_path)], check=True)
-
-        except Exception as e:
-            self.show_error("Ошибка", f"Не удалось открыть папку:\n{str(e)}")
-            print(f"Не удалось открыть папку: {e}")

@@ -6,7 +6,7 @@ UI модуль для генератора таблиц закупки.
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import customtkinter as ctk
-from backend import PurchaseTableBackend
+from backend.backend import PurchaseTableBackend
 
 
 class PurchaseTableGUI:
@@ -104,7 +104,6 @@ class PurchaseTableGUI:
 
     def create_main_interface(self):
         """Создание основного интерфейса на customtkinter"""
-
         # === Заголовок ===
         title_frame = ctk.CTkFrame(self.root, fg_color="transparent")
         title_frame.pack(fill="x", padx=20, pady=(20, 10))
@@ -184,7 +183,6 @@ class PurchaseTableGUI:
 
     def create_settings_frame(self):
         """Создание фрейма настроек на customtkinter"""
-
         # Основной фрейм настроек
         settings_container = ctk.CTkFrame(self.root, corner_radius=10)
         settings_container.pack(fill="x", padx=20, pady=(10, 20))
@@ -241,7 +239,6 @@ class PurchaseTableGUI:
 
     def create_purchase_interface(self):
         """Создание интерфейса для режима закупки"""
-
         # === Заголовок ===
         header_frame = ctk.CTkFrame(self.purchase_frame, fg_color="transparent")
         header_frame.pack(fill="x", padx=20, pady=(20, 10))
@@ -334,7 +331,6 @@ class PurchaseTableGUI:
         )
         found_scrollbar = ttk.Scrollbar(found_inner_frame, orient=tk.VERTICAL, command=self.found_listbox.yview)
         self.found_listbox.config(yscrollcommand=found_scrollbar.set)
-
         self.found_listbox.pack(side=tk.LEFT, fill="both", expand=True)
         found_scrollbar.pack(side=tk.RIGHT, fill="y")
 
@@ -355,7 +351,7 @@ class PurchaseTableGUI:
         tree_inner_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
 
         # Treeview
-        columns = ("Артикул", "Наименование", "Цена", "Количество")
+        columns = ("Артикул", "Наименование", "Цена", "Количество", "Поставщик")
         self.tree = ttk.Treeview(
             tree_inner_frame,
             columns=columns,
@@ -366,28 +362,32 @@ class PurchaseTableGUI:
 
         # Настройка колонок
         self.tree.column("#0", width=50, minwidth=50, anchor="center")
-        self.tree.column("Артикул", width=200, minwidth=150)
-        self.tree.column("Наименование", width=250, minwidth=200)
-        self.tree.column("Цена", width=80, minwidth=80, anchor="e")
-        self.tree.column("Количество", width=100, minwidth=80, anchor="center")
+        self.tree.column("Артикул", width=150, minwidth=120)
+        self.tree.column("Наименование", width=200, minwidth=180)
+        self.tree.column("Цена", width=80, minwidth=70, anchor="e")
+        self.tree.column("Количество", width=80, minwidth=70, anchor="center")
+        self.tree.column("Поставщик", width=150, minwidth=120, anchor="w")
 
         # Заголовки
         self.tree.heading("#0", text="✓")
         self.tree.heading("Артикул", text="Артикул")
         self.tree.heading("Наименование", text="Наименование")
         self.tree.heading("Цена", text="Цена")
-        self.tree.heading("Количество", text="Количество")
+        self.tree.heading("Количество", text="Кол-во")
+        self.tree.heading("Поставщик", text="Поставщик")
 
         # Scrollbar
         tree_scrollbar = ttk.Scrollbar(tree_inner_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.config(yscrollcommand=tree_scrollbar.set)
-
         self.tree.pack(side=tk.LEFT, fill="both", expand=True)
         tree_scrollbar.pack(side=tk.RIGHT, fill="y")
 
         # Биндинг событий
-        self.tree.bind("<Double-1>", self.on_tree_double_click)
-        self.tree.bind("<Button-1>", self.on_tree_click)
+        # Биндинг событий
+        self.tree.bind("<Double-1>", self.on_tree_double_click)  # Для изменения количества
+        self.tree.bind("<Button-1>", self.on_tree_click)  # Для чекбокса
+        self.tree.bind("<Button-1>", self.on_tree_cell_click,
+                       add="+")  # Для выбора поставщика (добавляем к существующему)
 
     def create_control_buttons(self):
         """Создание кнопок управления"""
@@ -494,11 +494,9 @@ class PurchaseTableGUI:
         """Обработка изменения поиска"""
         search_text = self.search_var.get()
         found_products = self.backend.search_products(search_text)
-
         # Обновление списка найденных
         self.found_listbox.delete(0, tk.END)
         self.filtered_items = {}
-
         for i, product in enumerate(found_products):
             article = product.get('article', '???')
             name = product.get('name', 'Без названия')[:40]
@@ -512,12 +510,10 @@ class PurchaseTableGUI:
         if not selection:
             self.show_error("Предупреждение", "Выберите товар для добавления")
             return
-
         index = selection[0]
         if index not in self.filtered_items:
             self.show_error("Ошибка", "Товар не найден в кэше")
             return
-
         product = self.filtered_items[index]
         if self.backend.add_product_to_order(product):
             self.update_tree()
@@ -539,45 +535,35 @@ class PurchaseTableGUI:
         item = self.tree.selection()[0] if self.tree.selection() else None
         if not item:
             return
-
         values = self.tree.item(item)['values']
         if not values:
             return
-
         article = values[0]
         try:
             current_qty = int(values[3])
         except (ValueError, IndexError):
             current_qty = 1
 
-        # Используем CTkInputDialog
-        dialog = ctk.CTkInputDialog(
-            title="Изменить количество",
-            text=f"Введите новое количество для {article}:"
+        # Используем стандартный Tkinter диалог для ввода целого числа
+        new_qty = tk.simpledialog.askinteger(
+            "Изменить количество",
+            f"Введите новое количество для {article}:",
+            initialvalue=current_qty,
+            minvalue=0,
+            maxvalue=9999
         )
-        dialog._entry.delete(0, "end")
-        dialog._entry.insert(0, str(current_qty))
-        new_qty_str = dialog.get_input()
 
-        if new_qty_str is None:
-            return  # пользователь нажал Cancel
-
-        try:
-            new_qty = int(new_qty_str)
+        if new_qty is not None:  # Пользователь нажал OK, а не Cancel
             if self.backend.update_item_quantity(article, new_qty):
                 self.update_tree()
-        except ValueError:
-            self.show_error("Ошибка", "Введите корректное число")
 
     def update_tree(self):
         """Обновление дерева товаров"""
         # Очищаем дерево
         for item in self.tree.get_children():
             self.tree.delete(item)
-
         # Получаем данные от backend
         display_items = self.backend.get_order_items_for_display()
-
         # Добавляем товары
         for item_data in display_items:
             checkbox = "☑" if item_data['enabled'] else "☐"
@@ -585,9 +571,64 @@ class PurchaseTableGUI:
                 item_data['article'],
                 item_data['name'],
                 f"{item_data['price']:.2f}",
-                item_data['quantity']
+                item_data['quantity'],
+                item_data['selected_supplier']  # Отображаем выбранного поставщика
             )
-            self.tree.insert("", tk.END, text=checkbox, values=values)
+            self.tree.insert("", tk.END, text=checkbox, values=values, tags=(item_data['article'],))
+
+    def on_tree_cell_click(self, event):
+        """Обработка клика по ячейке для редактирования поставщика."""
+        region = self.tree.identify_region(event.x, event.y)
+        if region != "cell":
+            return
+
+        column = self.tree.identify_column(event.x)
+        row = self.tree.identify_row(event.y)
+
+        # Проверяем, что кликнули именно по колонке "Поставщик" (5-я колонка)
+        if column != "#5" or not row:
+            return
+
+        # Получаем артикул из тега
+        tags = self.tree.item(row, 'tags')
+        if not tags:
+            return
+        article = tags[0]
+
+        # Получаем список всех поставщиков для этого артикула из backend
+        display_items = self.backend.get_order_items_for_display()
+        target_item = next((item for item in display_items if item['article'] == article), None)
+        if not target_item:
+            return
+
+        all_suppliers = target_item['all_suppliers']
+        if len(all_suppliers) <= 1:
+            return  # Нет смысла показывать Combobox, если поставщик один
+
+        # Получаем текущие координаты ячейки
+        cell_bbox = self.tree.bbox(row, column)
+        if not cell_bbox:
+            return
+
+        x, y, width, height = cell_bbox
+
+        # Создаем Combobox
+        combo = ttk.Combobox(self.tree, values=all_suppliers, state="readonly", font=("Arial", 11))
+        combo.set(target_item['selected_supplier'])
+        combo.place(x=x, y=y, width=width, height=height)
+
+        def on_select(event):
+            selected_supplier = combo.get()
+            if self.backend.update_item_supplier(article, selected_supplier):
+                self.update_tree()
+            combo.destroy()
+
+        def on_focus_out(event):
+            combo.destroy()
+
+        combo.bind("<<ComboboxSelected>>", on_select)
+        combo.bind("<FocusOut>", on_focus_out)
+        combo.focus_set()
 
     def generate_purchase_list(self):
         """Генерация листа закупки"""
@@ -630,7 +671,6 @@ class PurchaseTableGUI:
             bg_color = "#F5F5F5"
             fg_color = "#000000"
             highlight_bg = "#D0D0D0"
-
         self.found_listbox.configure(
             bg=bg_color,
             fg=fg_color,
@@ -645,8 +685,8 @@ def main():
     root.title("Генератор таблиц закупки")
 
     # Устанавливаем тему и цветовую схему
-    ctk.set_appearance_mode("light")      # "light", "dark", "system"
-    ctk.set_default_color_theme("blue")   # "blue", "green", "dark-blue"
+    ctk.set_appearance_mode("light")  # "light", "dark", "system"
+    ctk.set_default_color_theme("blue")  # "blue", "green", "dark-blue"
 
     # Создаём приложение
     app = PurchaseTableGUI(root)
