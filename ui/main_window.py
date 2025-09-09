@@ -17,7 +17,7 @@ class CustomQuantityDialog:
         self.result = None
         self.dialog = ctk.CTkToplevel(parent)
         self.dialog.title(title)
-        self.dialog.geometry("350x200")
+        self.dialog.geometry("400x300")
         self.dialog.resizable(False, False)
         self.dialog.transient(parent)
         self.dialog.grab_set()
@@ -29,7 +29,7 @@ class CustomQuantityDialog:
         header_label = ctk.CTkLabel(
             self.dialog,
             text=title,
-            font=("Arial", 16, "bold")
+            font=("Arial", 20, "bold")
         )
         header_label.pack(pady=(20, 10))
 
@@ -37,7 +37,7 @@ class CustomQuantityDialog:
         message_label = ctk.CTkLabel(
             self.dialog,
             text=message,
-            font=("Arial", 12),
+            font=("Arial", 16),
             wraplength=300
         )
         message_label.pack(pady=(0, 20))
@@ -47,7 +47,7 @@ class CustomQuantityDialog:
             self.dialog,
             width=200,
             height=40,
-            font=("Arial", 14),
+            font=("Arial", 16, "bold"),
             justify="center"
         )
         self.entry.pack(pady=(0, 20))
@@ -101,71 +101,129 @@ class CustomQuantityDialog:
         self.dialog.destroy()
 
 
-class CustomSupplierSelector:
-    """Кастомный селектор поставщика в стиле программы"""
+class SupplierSelectorPopup:
+    """Всплывающее окно для выбора поставщика"""
 
-    def __init__(self, parent, suppliers, current_supplier, x, y, width, height):
-        self.result = current_supplier
+    def __init__(self, parent, suppliers, current_supplier, x, y):
+        self.result = None
         self.parent = parent
 
-        # Создаем фрейм-контейнер
-        self.frame = ctk.CTkFrame(parent, corner_radius=8)
-        self.frame.place(x=x, y=y, width=width, height=min(height * len(suppliers) + 10, 200))
+        # Создаем всплывающее окно
+        self.popup = ctk.CTkToplevel(parent)
+        self.popup.title("Выбор поставщика")
 
-        # Создаем скроллируемый фрейм
-        self.scrollable_frame = ctk.CTkScrollableFrame(
-            self.frame,
-            width=width - 20,
-            height=min(height * len(suppliers), 180),
-            corner_radius=0
-        )
-        self.scrollable_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        # Убираем декорации окна
+        self.popup.overrideredirect(True)
+
+        # Вычисляем размеры
+        width = 250
+        height = min(len(suppliers) * 40 + 20, 300)
+
+        # Позиционируем окно рядом с курсором
+        # Проверяем границы экрана
+        screen_width = self.popup.winfo_screenwidth()
+        screen_height = self.popup.winfo_screenheight()
+
+        if x + width > screen_width:
+            x = screen_width - width - 10
+        if y + height > screen_height:
+            y = y - height - 10
+
+        self.popup.geometry(f"{width}x{height}+{x}+{y}")
+
+        # Настраиваем окно
+        self.popup.configure(fg_color=("#F8F8F8", "#2B2B2B"))
+        self.popup.transient(parent)
+        self.popup.grab_set()
+        self.popup.focus_set()
+
+        # Поднимаем на передний план
+        self.popup.lift()
+        self.popup.attributes('-topmost', True)
+
+        print(f"Создано всплывающее окно в позиции {x}, {y}, размер {width}x{height}")
+
+        # Создаем фрейм для кнопок
+        if len(suppliers) > 6:
+            # Если много поставщиков, используем скроллируемый фрейм
+            container = ctk.CTkScrollableFrame(
+                self.popup,
+                width=width - 20,
+                height=height - 20
+            )
+            container.pack(fill="both", expand=True, padx=10, pady=10)
+        else:
+            # Если мало поставщиков, обычный фрейм
+            container = ctk.CTkFrame(self.popup, fg_color="transparent")
+            container.pack(fill="both", expand=True, padx=10, pady=10)
 
         # Добавляем кнопки для каждого поставщика
-        for supplier in suppliers:
+        for i, supplier in enumerate(suppliers):
             if supplier == current_supplier:
-                if ctk.get_appearance_mode() == "Dark":
-                    btn_color = "#2196F3"
-                    hover_color = "#1976D2"
-                else:
-                    btn_color = "#1E88E5"  # Чуть ярче для светлой темы
-                    hover_color = "#1565C0"
+                # Выделяем текущего поставщика
+                btn_color = "#2196F3"
+                hover_color = "#1976D2"
+                text_color = "white"
+                font_weight = "bold"
             else:
+                # Обычные поставщики
                 if ctk.get_appearance_mode() == "Dark":
                     btn_color = "#404040"
                     hover_color = "#505050"
+                    text_color = "#E0E0E0"
                 else:
-                    btn_color = "#E0E0E0"
-                    hover_color = "#BDBDBD"
+                    btn_color = "#F0F0F0"
+                    hover_color = "#E0E0E0"
+                    text_color = "#333333"
+                font_weight = "normal"
 
             btn = ctk.CTkButton(
-                self.scrollable_frame,
+                container,
                 text=supplier,
                 command=lambda s=supplier: self.select_supplier(s),
                 fg_color=btn_color,
                 hover_color=hover_color,
-                height=30,
-                font=("Arial", 11),
+                text_color=text_color,
+                height=35,
+                font=("Arial", 12, font_weight),
                 anchor="w"
             )
-            btn.pack(fill="x", pady=1)
+            btn.pack(fill="x", pady=2)
 
-        # Привязываем обработчик клика вне области
-        parent.bind("<Button-1>", self.on_click_outside, add="+")
+            # Устанавливаем фокус на текущий поставщик
+            if supplier == current_supplier:
+                btn.focus_set()
+
+        # Привязываем обработчики событий
+        self.popup.bind("<Escape>", self.on_escape)
+        self.popup.bind("<FocusOut>", self.on_focus_out)
+
+        print(f"Добавлено {len(suppliers)} кнопок поставщиков")
 
     def select_supplier(self, supplier):
+        """Выбор поставщика"""
         self.result = supplier
-        self.destroy()
+        print(f"Выбран поставщик: {supplier}")
+        self.close()
 
-    def on_click_outside(self, event):
-        # Проверяем, был ли клик внутри нашего фрейма
-        if not (self.frame.winfo_x() <= event.x <= self.frame.winfo_x() + self.frame.winfo_width() and
-                self.frame.winfo_y() <= event.y <= self.frame.winfo_y() + self.frame.winfo_height()):
-            self.destroy()
+    def on_escape(self, event):
+        """Обработка нажатия Escape"""
+        print("Нажат Escape, закрываем селектор")
+        self.close()
 
-    def destroy(self):
-        self.parent.unbind("<Button-1>")
-        self.frame.destroy()
+    def on_focus_out(self, event):
+        """Обработка потери фокуса"""
+        print("Потеря фокуса, закрываем селектор")
+        self.close()
+
+    def close(self):
+        """Закрытие окна"""
+        try:
+            if self.popup and self.popup.winfo_exists():
+                self.popup.destroy()
+                print("Всплывающее окно закрыто")
+        except tk.TclError:
+            pass
 
 
 class PurchaseTableGUI:
@@ -174,7 +232,12 @@ class PurchaseTableGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Генератор таблиц закупки")
-        self.root.geometry("800x600")
+        # Добавляем автоматическое разворачивание на весь экран
+        # Надёжное разворачивание во весь экран:
+        self.root.update_idletasks()
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        self.root.geometry(f"{screen_w}x{screen_h}+0+0")
         self.root.resizable(True, True)
 
         # Устанавливаем тему customtkinter
@@ -326,66 +389,72 @@ class PurchaseTableGUI:
         self.update_theme_dependent_widgets()
 
     def create_main_interface(self):
-        """Создание основного интерфейса на customtkinter"""
-        # === Заголовок с кнопкой переключения темы ===
-        title_frame = ctk.CTkFrame(self.root, fg_color="transparent")
-        title_frame.pack(fill="x", padx=20, pady=(20, 10))
-
-        title_label = ctk.CTkLabel(
-            title_frame,
-            text="Генератор таблиц закупки",
-            font=("Arial", 20, "bold"),
-            text_color=("black", "white")
-        )
-        title_label.pack(side=tk.LEFT)
-
-        # Кнопка переключения темы
-        self.theme_button = ctk.CTkButton(
-            title_frame,
-            text="Тема",
-            command=self.toggle_theme,
-            width=48,
-            height=36,
-            fg_color="gray" if self.current_theme == "dark" else "gray20",  # Светлый серый в светлой теме
-            hover_color="gray" if self.current_theme == "dark" else "gray20",  # Чуть темнее при наведении
-            text_color="black",
-            font=("Arial", 12)
-        )
-        self.theme_button.pack(side=tk.RIGHT)
+        """Создание основного интерфейса на customtkinter (обновлённая версия)"""
 
         # === Горизонтальный контейнер для кнопок и настроек (40% / 60%) ===
         self.main_top_container = ctk.CTkFrame(self.root, fg_color="transparent")
-        self.main_top_container.pack(fill="x", padx=20, pady=(0, 20))
+        self.main_top_container.pack(fill="x", padx=20, pady=(0, 0))
 
         # --- Левая часть: Подложка для кнопок ---
         buttons_wrapper = ctk.CTkFrame(self.main_top_container, corner_radius=10)
         buttons_wrapper.pack(side=tk.LEFT, fill="both", expand=False, padx=(0, 10), pady=0)
 
-        # Внутренний контейнер с отступами 10px
+        # Внутренний контейнер с отступами
         buttons_container = ctk.CTkFrame(buttons_wrapper, fg_color="transparent")
         buttons_container.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Основные кнопки (вертикально, выровнены по левому краю)
-        # Кнопка "Лист наличия"
-        availability_btn = self.create_button(
-            buttons_container, "Лист наличия", self.generate_availability_list,
-            fg_color="#4CAF50", hover_color="#45a049",
-            side=tk.TOP, pady=(0, 10), anchor="w"  # Выравнивание по левому краю
+        # --- Кнопка "Тема" (во всю ширину = 2x центральных кнопок) ---
+        theme_btn = ctk.CTkButton(
+            buttons_container,
+            text="Тема",
+            command=self.toggle_theme,
+            fg_color="gray" if self.current_theme == "dark" else "gray20",
+            hover_color="gray" if self.current_theme == "dark" else "gray20",
+            corner_radius=8,
+            height=40
         )
+        theme_btn.pack(fill="x", pady=(0, 10))  # занимает всю ширину контейнера
 
-        # Кнопка "Лист закупки"
-        purchase_btn = self.create_button(
-            buttons_container, "Лист закупки", self.show_purchase_interface,
-            fg_color="#2196F3", hover_color="#1976D2",
-            side=tk.TOP, pady=(0, 10), anchor="w"
-        )
+        # --- Ряд из двух кнопок: "Лист закупки" и "Генерировать" ---
+        row_frame = ctk.CTkFrame(buttons_container, fg_color="transparent")
+        row_frame.pack(fill="x", pady=(0, 10))
 
-        # Кнопка "Генерировать лист закупки"
-        generate_btn = self.create_button(
-            buttons_container, "Генерировать лист закупки", self.generate_purchase_list,
-            fg_color="#FF9800", hover_color="#F57C00",
-            side=tk.TOP, anchor="w"  # Без нижнего отступа у последней кнопки
+        row_frame.grid_columnconfigure(0, weight=1, uniform="equal")
+        row_frame.grid_columnconfigure(1, weight=1, uniform="equal")
+
+        purchase_btn = ctk.CTkButton(
+            row_frame,
+            text="Лист закупки",
+            command=self.show_purchase_interface,
+            fg_color="#2196F3",
+            hover_color="#1976D2",
+            corner_radius=8,
+            height=40
         )
+        purchase_btn.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+
+        generate_btn = ctk.CTkButton(
+            row_frame,
+            text="Генерировать",
+            command=self.generate_purchase_list,
+            fg_color="#FF9800",
+            hover_color="#F57C00",
+            corner_radius=8,
+            height=40
+        )
+        generate_btn.grid(row=0, column=1, padx=(5, 0), sticky="ew")
+
+        # --- Кнопка "Лист наличия" (во всю ширину = 2x центральных кнопок) ---
+        availability_btn = ctk.CTkButton(
+            buttons_container,
+            text="Лист наличия",
+            command=self.generate_availability_list,
+            fg_color="#4CAF50",
+            hover_color="#45a049",
+            corner_radius=8,
+            height=40
+        )
+        availability_btn.pack(fill="x", pady=(0, 0))  # занимает всю ширину контейнера
 
         # --- Правая часть: Подложка для настроек путей ---
         settings_wrapper = ctk.CTkFrame(self.main_top_container, corner_radius=10)
@@ -487,24 +556,29 @@ class PurchaseTableGUI:
         ).pack(side=tk.RIGHT)
 
     def create_purchase_interface(self):
-        """Создание интерфейса для режима закупки"""
-        # === Заголовок ===
-        header_frame = ctk.CTkFrame(self.purchase_frame, fg_color="transparent")
-        header_frame.pack(fill="x", padx=20, pady=(0, 10))
+        """Создание интерфейса для режима закупки (исправленные отступы и центрирование)"""
+        # purchase_frame уже создан в create_main_interface, но мы убедимся:
+        self.purchase_frame = ctk.CTkFrame(self.root, fg_color="transparent")
 
-        ctk.CTkLabel(
-            header_frame,
-            text="Составление листа закупки",
-            font=("Arial", 18, "bold"),
-            text_color=("black", "white")
-        ).pack()
+        # === Единая панель поиска и найденных товаров ===
+        # search_container имеет верхний внешний отступ 20px (между блоком путей и этим блоком)
+        search_container = ctk.CTkFrame(self.purchase_frame, corner_radius=10)
+        search_container.pack(fill="both", expand=False, padx=0, pady=(20, 0))
 
-        # === Панель поиска ===
-        search_frame = ctk.CTkFrame(self.purchase_frame, fg_color="transparent")
-        search_frame.pack(fill="x", padx=20, pady=(0, 15))
+        # Верхняя строка: используем pack для top_row_frame, а внутри него grid для трёх колонок
+        top_row_frame = ctk.CTkFrame(search_container, fg_color="transparent")
+        top_row_frame.pack(fill="x", padx=0, pady=(0, 0))
 
-        ctk.CTkLabel(search_frame, text="Поиск по артикулу:", font=("Arial", 12)).pack(side=tk.LEFT, padx=(0, 10))
+        # Настраиваем 3 равных колонки: поиск | заголовок (центр) | кнопка
+        top_row_frame.grid_columnconfigure(0, weight=1)
+        top_row_frame.grid_columnconfigure(1, weight=1)
+        top_row_frame.grid_columnconfigure(2, weight=1)
 
+        # ---- Поиск (левая колонка) ----
+        search_frame = ctk.CTkFrame(top_row_frame, fg_color="transparent")
+        search_frame.grid(row=0, column=0, sticky="w", padx=10, pady=10)
+
+        ctk.CTkLabel(search_frame, text="Поиск по артикулу:", font=("Arial", 12)).pack(side=tk.LEFT, padx=(0, 8))
         self.search_var.trace('w', self.on_search_change)
         search_entry = ctk.CTkEntry(
             search_frame,
@@ -512,12 +586,22 @@ class PurchaseTableGUI:
             placeholder_text="Введите артикул...",
             font=("Arial", 12),
             height=32,
-            width=250
+            width=280
         )
-        search_entry.pack(side=tk.LEFT, padx=5)
+        search_entry.pack(side=tk.LEFT)
 
-        ctk.CTkButton(
-            search_frame,
+        # ---- Заголовок (центральная колонка) ----
+        header_label = ctk.CTkLabel(
+            top_row_frame,
+            text="Найденные товары",
+            font=("Arial", 14, "bold"),
+            text_color=("black", "white")
+        )
+        header_label.grid(row=0, column=1, sticky="nsew")
+
+        # ---- Кнопка (правая колонка) ----
+        add_btn = ctk.CTkButton(
+            top_row_frame,
             text="Добавить выбранный",
             command=self.add_selected_item,
             fg_color="#4CAF50",
@@ -526,12 +610,37 @@ class PurchaseTableGUI:
             corner_radius=8,
             font=("Arial", 12, "bold"),
             height=32
-        ).pack(side=tk.RIGHT, padx=5)
+        )
+        add_btn.grid(row=0, column=2, sticky="e", padx=10, pady=10)
 
-        # === Найденные товары ===
-        self.create_found_items_section()
+        # === Блок найденных (нижняя часть search_container) ===
+        found_inner_frame = ctk.CTkFrame(search_container, fg_color="transparent")
+        # внутренние отступы блока — 10px
+        found_inner_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
-        # === Основной список товаров ===
+        # listbox с правильными цветами
+        self.update_listbox_colors_vars()
+        self.found_listbox = tk.Listbox(
+            found_inner_frame,
+            height=6,
+            font=("Arial", 11),
+            bg=self.listbox_bg,
+            fg=self.listbox_fg,
+            selectbackground="#2196F3",
+            selectforeground="white",
+            relief="flat",
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=self.listbox_highlight_bg,
+            highlightcolor="#2196F3"
+        )
+        found_scrollbar = ttk.Scrollbar(found_inner_frame, orient=tk.VERTICAL, command=self.found_listbox.yview)
+        self.found_listbox.config(yscrollcommand=found_scrollbar.set)
+        self.found_listbox.pack(side=tk.LEFT, fill="both", expand=True)
+        found_scrollbar.pack(side=tk.RIGHT, fill="y")
+
+        # === Основной список товаров (дерево) ===
+        # используем отдельную функцию (ниже) — она тоже приведена внизу
         self.create_tree_section()
 
         # === Кнопки управления ===
@@ -587,9 +696,10 @@ class PurchaseTableGUI:
             self.listbox_highlight_bg = "#D0D0D0"
 
     def create_tree_section(self):
-        """Создание секции дерева товаров"""
+        """Создание секции дерева товаров (отступ сверху 20, внутренний padding 10)"""
         tree_container = ctk.CTkFrame(self.purchase_frame, corner_radius=10)
-        tree_container.pack(fill="both", expand=True, padx=20, pady=(0, 15))
+        # верхний внешний отступ 20px (между найденными и списком)
+        tree_container.pack(fill="both", expand=True, padx=0, pady=(20, 0))
 
         ctk.CTkLabel(
             tree_container,
@@ -600,7 +710,7 @@ class PurchaseTableGUI:
         ).pack(anchor="w", padx=15, pady=(10, 5))
 
         tree_inner_frame = ctk.CTkFrame(tree_container, fg_color="transparent")
-        tree_inner_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        tree_inner_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
         # Treeview
         columns = ("Артикул", "Наименование", "Цена", "Количество", "Поставщик")
@@ -612,7 +722,7 @@ class PurchaseTableGUI:
             style="Custom.Treeview"
         )
 
-        # Настройка колонок
+        # Настройка колонок (как у тебя было)
         self.tree.column("#0", width=50, minwidth=50, anchor="center")
         self.tree.column("Артикул", width=150, minwidth=120)
         self.tree.column("Наименование", width=200, minwidth=180)
@@ -620,7 +730,6 @@ class PurchaseTableGUI:
         self.tree.column("Количество", width=80, minwidth=70, anchor="center")
         self.tree.column("Поставщик", width=150, minwidth=120, anchor="w")
 
-        # Заголовки
         self.tree.heading("#0", text="✓")
         self.tree.heading("Артикул", text="Артикул")
         self.tree.heading("Наименование", text="Наименование")
@@ -628,21 +737,20 @@ class PurchaseTableGUI:
         self.tree.heading("Количество", text="Кол-во")
         self.tree.heading("Поставщик", text="Поставщик")
 
-        # Scrollbar
         tree_scrollbar = ttk.Scrollbar(tree_inner_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.config(yscrollcommand=tree_scrollbar.set)
         self.tree.pack(side=tk.LEFT, fill="both", expand=True)
         tree_scrollbar.pack(side=tk.RIGHT, fill="y")
 
-        # Биндинг событий
-        self.tree.bind("<Double-1>", self.on_tree_double_click)  # Для изменения количества
-        self.tree.bind("<Button-1>", self.on_tree_click)  # Для чекбокса
-        self.tree.bind("<Button-1>", self.on_tree_cell_click, add="+")  # Для выбора поставщика
+        # ИСПРАВЛЕННЫЕ биндинги - только один обработчик для одинарного клика
+        self.tree.bind("<Double-1>", self.on_tree_double_click)
+        self.tree.bind("<Button-1>", self.on_tree_single_click)  # Объединенный обработчик
 
     def create_control_buttons(self):
-        """Создание кнопок управления"""
+        """Создание кнопок управления (внутренние отступы 10)"""
         control_frame = ctk.CTkFrame(self.purchase_frame, fg_color="transparent")
-        control_frame.pack(fill="x", padx=20, pady=(15, 20))
+        # верхний отступ 10, нижний 20 (внешний: отделяет дерево от кнопок)
+        control_frame.pack(fill="x", padx=0, pady=(10, 20))
 
         ctk.CTkButton(
             control_frame,
@@ -654,7 +762,7 @@ class PurchaseTableGUI:
             corner_radius=8,
             font=("Arial", 12, "bold"),
             height=35
-        ).pack(side=tk.LEFT, padx=5)
+        ).pack(side=tk.LEFT, padx=10)
 
         ctk.CTkButton(
             control_frame,
@@ -666,7 +774,7 @@ class PurchaseTableGUI:
             corner_radius=8,
             font=("Arial", 12),
             height=35
-        ).pack(side=tk.LEFT, padx=5)
+        ).pack(side=tk.LEFT, padx=10)
 
         ctk.CTkButton(
             control_frame,
@@ -678,7 +786,7 @@ class PurchaseTableGUI:
             corner_radius=8,
             font=("Arial", 12),
             height=35
-        ).pack(side=tk.LEFT, padx=5)
+        ).pack(side=tk.LEFT, padx=10)
 
         ctk.CTkButton(
             control_frame,
@@ -690,7 +798,7 @@ class PurchaseTableGUI:
             corner_radius=8,
             font=("Arial", 12, "bold"),
             height=35
-        ).pack(side=tk.RIGHT, padx=5)
+        ).pack(side=tk.RIGHT, padx=10)
 
     # === ОБРАБОТЧИКИ СОБЫТИЙ ===
 
@@ -732,7 +840,8 @@ class PurchaseTableGUI:
         """Показать интерфейс закупки"""
         self.backend.load_default_order()
         self.update_tree()
-        self.purchase_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        # Пакуем фрейм с внешними 20px по бокам, без верхнего padding (между блоками 20 реализовано в search_container)
+        self.purchase_frame.pack(fill="both", expand=True, padx=20, pady=(0, 0))
         self.update_status("Режим составления листа закупки")
 
     def hide_purchase_interface(self):
@@ -834,24 +943,37 @@ class PurchaseTableGUI:
             )
             self.tree.insert("", tk.END, text=checkbox, values=values, tags=(item_data['article'],))
 
-    def on_tree_cell_click(self, event):
-        """Обработка клика по ячейке для редактирования поставщика с кастомным селектором"""
+    def on_tree_single_click(self, event):
+        """Объединенный обработчик одинарного клика по дереву"""
         region = self.tree.identify_region(event.x, event.y)
-        if region != "cell":
-            return
-
         column = self.tree.identify_column(event.x)
         row = self.tree.identify_row(event.y)
 
-        # Проверяем, что кликнули именно по колонке "Поставщик" (5-я колонка)
-        if column != "#5" or not row:
+        if not row:
             return
 
-        # Получаем артикул из тега
-        tags = self.tree.item(row, 'tags')
-        if not tags:
+        # Если кликнули по колонке "Поставщик" (#5), показываем селектор
+        if region == "cell" and column == "#5":
+            self.show_supplier_selector(event, row)
+        # Если кликнули по колонке с чекбоксом (#0), переключаем состояние
+        elif region == "tree" and column == "#0":
+            self.toggle_item_checkbox(row)
+
+    def toggle_item_checkbox(self, row):
+        """Переключение чекбокса товара"""
+        values = self.tree.item(row)['values']
+        if values:
+            article = values[0]
+            if self.backend.toggle_item_enabled(article):
+                self.update_tree()
+
+    def show_supplier_selector(self, event, row):
+        """Показать селектор поставщика"""
+        # Получаем артикул из значений строки
+        values = self.tree.item(row)['values']
+        if not values:
             return
-        article = tags[0]
+        article = values[0]
 
         # Получаем список всех поставщиков для этого артикула из backend
         display_items = self.backend.get_order_items_for_display()
@@ -861,31 +983,33 @@ class PurchaseTableGUI:
 
         all_suppliers = target_item['all_suppliers']
         if len(all_suppliers) <= 1:
-            return  # Нет смысла показывать селектор, если поставщик один
-
-        # Получаем текущие координаты ячейки
-        cell_bbox = self.tree.bbox(row, column)
-        if not cell_bbox:
+            print(f"У артикула {article} только один поставщик: {all_suppliers}")
             return
 
-        x, y, width, height = cell_bbox
+        print(f"Показываем селектор для артикула {article}")
+        print(f"Доступные поставщики: {all_suppliers}")
+        print(f"Текущий поставщик: {target_item['selected_supplier']}")
 
-        # Создаем кастомный селектор поставщика
-        selector = CustomSupplierSelector(
-            self.tree,
+        # Создаем селектор как всплывающее окно
+        selector = SupplierSelectorPopup(
+            self.root,
             all_suppliers,
             target_item['selected_supplier'],
-            x, y, width, 30
+            event.x_root,
+            event.y_root
         )
 
-        # Ждем выбора и обновляем при необходимости
-        def check_selection():
-            if selector.result != target_item['selected_supplier']:
-                if self.backend.update_item_supplier(article, selector.result):
-                    self.update_tree()
+        # Ждем результат
+        self.root.wait_window(selector.popup)
 
-        # Запускаем проверку через небольшой интервал
-        self.root.after(100, check_selection)
+        # Проверяем результат
+        if selector.result and selector.result != target_item['selected_supplier']:
+            print(f"Обновляем поставщика: {target_item['selected_supplier']} -> {selector.result}")
+            if self.backend.update_item_supplier(article, selector.result):
+                self.update_tree()
+                print("Дерево обновлено успешно")
+            else:
+                print("Ошибка при обновлении поставщика в backend")
 
     def generate_purchase_list(self):
         """Генерация листа закупки"""
@@ -932,7 +1056,6 @@ def main():
     """Запуск GUI приложения на customtkinter"""
     # Создаём главное окно CTk
     root = ctk.CTk()
-    root.title("Генератор таблиц закупки")
 
     # Устанавливаем тему и цветовую схему
     ctk.set_appearance_mode("light")  # "light", "dark", "system"
