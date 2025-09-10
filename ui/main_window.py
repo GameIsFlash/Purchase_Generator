@@ -422,11 +422,11 @@ class PurchaseTableGUI:
     def create_main_interface(self):
         """Создание основного интерфейса на customtkinter (обновлённая версия)"""
 
-        # === Горизонтальный контейнер для кнопок и настроек (40% / 60%) ===
+        # === Горизонтальный контейнер для кнопок и настроек (3 блока) ===
         self.main_top_container = ctk.CTkFrame(self.root, fg_color="transparent")
         self.main_top_container.pack(fill="x", padx=20, pady=(0, 0))
 
-        # --- Левая часть: Подложка для кнопок ---
+        # --- Левая часть: Блок основных кнопок ---
         buttons_wrapper = ctk.CTkFrame(self.main_top_container, corner_radius=10)
         buttons_wrapper.pack(side=tk.LEFT, fill="both", expand=False, padx=(0, 10), pady=0)
 
@@ -434,7 +434,7 @@ class PurchaseTableGUI:
         buttons_container = ctk.CTkFrame(buttons_wrapper, fg_color="transparent")
         buttons_container.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # --- Кнопка "Тема" (во всю ширину = 2x центральных кнопок) ---
+        # --- Кнопка "Тема" (во всю ширину) ---
         theme_btn = ctk.CTkButton(
             buttons_container,
             text="Тема",
@@ -444,7 +444,7 @@ class PurchaseTableGUI:
             corner_radius=8,
             height=40
         )
-        theme_btn.pack(fill="x", pady=(0, 10))  # занимает всю ширину контейнера
+        theme_btn.pack(fill="x", pady=(0, 10))
 
         # --- Ряд из двух кнопок: "Лист закупки" и "Генерировать" ---
         row_frame = ctk.CTkFrame(buttons_container, fg_color="transparent")
@@ -475,7 +475,7 @@ class PurchaseTableGUI:
         )
         generate_btn.grid(row=0, column=1, padx=(5, 0), sticky="ew")
 
-        # --- Кнопка "Лист наличия" (во всю ширину = 2x центральных кнопок) ---
+        # --- Кнопка "Лист наличия" (во всю ширину) ---
         availability_btn = ctk.CTkButton(
             buttons_container,
             text="Лист наличия",
@@ -485,7 +485,50 @@ class PurchaseTableGUI:
             corner_radius=8,
             height=40
         )
-        availability_btn.pack(fill="x", pady=(0, 0))  # занимает всю ширину контейнера
+        availability_btn.pack(fill="x", pady=(0, 0))
+
+        # --- Центральная часть: Блок JSON кнопок ---
+        json_wrapper = ctk.CTkFrame(self.main_top_container, corner_radius=10)
+        json_wrapper.pack(side=tk.LEFT, fill="both", expand=False, padx=(10, 10), pady=0)
+
+        # Внутренний контейнер с отступами
+        json_container = ctk.CTkFrame(json_wrapper, fg_color="transparent")
+        json_container.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Заголовок "JSON операции"
+        json_header_label = ctk.CTkLabel(
+            json_container,
+            text="JSON операции",
+            font=("Arial", 12, "bold"),
+            text_color=("black", "white")
+        )
+        json_header_label.pack(anchor="w", pady=(0, 5))
+
+        # Кнопка "Сохранить в JSON"
+        save_json_btn = ctk.CTkButton(
+            json_container,
+            text="Сохранить в JSON",
+            command=self.save_to_json,
+            fg_color="#607D8B",
+            hover_color="#455A64",
+            corner_radius=8,
+            height=40,
+            width=150
+        )
+        save_json_btn.pack(fill="x", pady=(0, 10))
+
+        # Кнопка "Загрузить из JSON"
+        load_json_btn = ctk.CTkButton(
+            json_container,
+            text="Загрузить из JSON",
+            command=self.load_from_json,
+            fg_color="#9E9E9E",
+            hover_color="#757575",
+            corner_radius=8,
+            height=40,
+            width=150
+        )
+        load_json_btn.pack(fill="x", pady=(0, 0))
 
         # --- Правая часть: Подложка для настроек путей ---
         settings_wrapper = ctk.CTkFrame(self.main_top_container, corner_radius=10)
@@ -698,6 +741,9 @@ class PurchaseTableGUI:
         self.found_listbox.pack(side=tk.LEFT, fill="both", expand=True)
         found_scrollbar.pack(side=tk.RIGHT, fill="y")
 
+        # Добавляем обработчик двойного клика для найденных товаров
+        self.found_listbox.bind("<Double-Button-1>", self.on_found_item_double_click)
+
         # === Основной список товаров (дерево) ===
         # используем отдельную функцию (ниже) — она тоже приведена внизу
         self.create_tree_section()
@@ -822,9 +868,8 @@ class PurchaseTableGUI:
         # Хранилище изображений (чтобы GC не удалил)
         self.tree_images = {}
 
-
     def create_control_buttons(self):
-        """Создание кнопок управления (внутренние отступы 10)"""
+        """Создание кнопок управления (убрана кнопка Назад и JSON кнопки)"""
         control_frame = ctk.CTkFrame(self.purchase_frame, fg_color="transparent")
         # верхний отступ 10, нижний 20 (внешний: отделяет дерево от кнопок)
         control_frame.pack(fill="x", padx=0, pady=(10, 20))
@@ -841,43 +886,21 @@ class PurchaseTableGUI:
             height=35
         ).pack(side=tk.LEFT, padx=10)
 
-        ctk.CTkButton(
-            control_frame,
-            text="Загрузить из JSON",
-            command=self.load_from_json,
-            fg_color="#9E9E9E",
-            hover_color="#757575",
-            text_color="white",
-            corner_radius=8,
-            font=("Arial", 12),
-            height=35
-        ).pack(side=tk.LEFT, padx=10)
-
-        ctk.CTkButton(
-            control_frame,
-            text="Сохранить в JSON",
-            command=self.save_to_json,
-            fg_color="#607D8B",
-            hover_color="#455A64",
-            text_color="white",
-            corner_radius=8,
-            font=("Arial", 12),
-            height=35
-        ).pack(side=tk.LEFT, padx=10)
-
-        ctk.CTkButton(
-            control_frame,
-            text="Назад",
-            command=self.hide_purchase_interface,
-            fg_color="#F44336",
-            hover_color="#D32F2F",
-            text_color="white",
-            corner_radius=8,
-            font=("Arial", 12, "bold"),
-            height=35
-        ).pack(side=tk.RIGHT, padx=10)
-
     # === ОБРАБОТЧИКИ СОБЫТИЙ ===
+
+    def on_found_item_double_click(self, event):
+        """Обработчик двойного клика по найденным товарам - добавляет товар в список закупки"""
+        selection = self.found_listbox.curselection()
+        if not selection:
+            return
+
+        index = selection[0]
+        if index not in self.filtered_items:
+            return
+
+        product = self.filtered_items[index]
+        if self.backend.add_product_to_order(product):
+            self.update_tree()
 
     def browse_database(self):
         file_path = filedialog.askopenfilename(

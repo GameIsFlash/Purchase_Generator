@@ -471,39 +471,65 @@ class PurchaseTableBackend:
         try:
             with open(filename, 'r', encoding='utf-8') as f:
                 order_data = json.load(f)
-
             if not isinstance(order_data, dict):
                 raise ValueError("Файл должен содержать объект (словарь) с артикулами и количеством")
 
             self.order_items = {}
             loaded_count = 0
-            skipped_count = 0
+            error_articles = []  # Список артикулов с ошибками
 
             for article, quantity in order_data.items():
                 # Проверяем, что количество — целое число
                 try:
                     quantity = int(quantity)
                 except (ValueError, TypeError):
-                    skipped_count += 1
+                    error_articles.append(article)
                     continue
 
                 product = self.find_product_by_article(article)
                 if product:
+                    # --- ИСПРАВЛЕНИЕ: Инициализируем полную структуру как в add_product_to_order ---
+                    # Получаем всех поставщиков для этого артикула
+                    all_suppliers = self.find_all_suppliers_for_article(article)
+                    if not all_suppliers:
+                        error_articles.append(article)
+                        continue
+
+                    # Выбираем поставщика с минимальной ценой по умолчанию
+                    default_supplier = min(all_suppliers, key=lambda x: x['price'])
+
                     self.order_items[article] = {
                         'product': product,
+                        'all_suppliers': all_suppliers,  # Список всех поставщиков
+                        'selected_supplier': default_supplier['supplier'],  # Выбранный поставщик
                         'quantity': quantity,
                         'enabled': True
                     }
                     loaded_count += 1
                 else:
-                    skipped_count += 1
+                    error_articles.append(article)
 
+            # Формируем сообщение для пользователя
             message = f"Загружено товаров: {loaded_count}"
-            if skipped_count:
-                message += f"\nПропущено (не найдено/ошибка): {skipped_count}"
+            if error_articles:
+                message += f"\nОшибки при загрузке ({len(error_articles)} шт.):"
+                # Группируем артикулы для компактного отображения
+                for i, art in enumerate(error_articles):
+                    if i < 10:  # Показываем первые 10
+                        message += f"\n• {art}"
+                    elif i == 10:
+                        message += f"\n... и еще {len(error_articles) - 10} артикулов"
+                        break
 
-            self.show_success("Загрузка завершена", message)
+            if error_articles:
+                self.show_error("Загрузка завершена с ошибками", message)
+            else:
+                self.show_success("Загрузка завершена", message)
+
             return True
+        except Exception as e:
+            self.show_error("Ошибка загрузки", f"Не удалось загрузить файл:\n{str(e)}")
+            return False
 
         except Exception as e:
             self.show_error("Ошибка загрузки", f"Не удалось загрузить файл:\n{str(e)}")
