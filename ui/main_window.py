@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
 import customtkinter as ctk
 from backend.backend import PurchaseTableBackend
+from utils.image_utils import create_rounded_image, pil_to_photoimage
 from . import ui_config
 import json
 from .ui_config import CONFIG_FILE
@@ -332,7 +333,7 @@ class PurchaseTableGUI:
                                 background="#2A2A2A",
                                 foreground="white",
                                 fieldbackground="#2A2A2A",
-                                rowheight=28,
+                                rowheight=190,
                                 font=("Arial", 11))
                 style.configure("Custom.Treeview.Heading",
                                 background="#3A3A3A",
@@ -754,9 +755,8 @@ class PurchaseTableGUI:
             self.listbox_highlight_bg = "#D0D0D0"
 
     def create_tree_section(self):
-        """Создание секции дерева товаров (отступ сверху 20, внутренний padding 10)"""
+        """Создание секции дерева товаров с фото в первой колонке"""
         tree_container = ctk.CTkFrame(self.purchase_frame, corner_radius=10)
-        # верхний внешний отступ 20px (между найденными и списком)
         tree_container.pack(fill="both", expand=True, padx=0, pady=(20, 0))
 
         ctk.CTkLabel(
@@ -770,8 +770,8 @@ class PurchaseTableGUI:
         tree_inner_frame = ctk.CTkFrame(tree_container, fg_color="transparent")
         tree_inner_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
-        # Treeview
-        columns = ("Артикул", "Наименование", "Цена", "Количество", "Поставщик")
+        # ИСПРАВЛЕНИЕ: Изменяем структуру колонок - фото будет в колонке #0
+        columns = ("Чекбокс", "Артикул", "Наименование", "Цена", "Количество", "Поставщик", "Сумма")
         self.tree = ttk.Treeview(
             tree_inner_frame,
             columns=columns,
@@ -780,29 +780,48 @@ class PurchaseTableGUI:
             style="Custom.Treeview"
         )
 
-        # Настройка колонок (как у тебя было)
-        self.tree.column("#0", width=50, minwidth=50, anchor="center")
-        self.tree.column("Артикул", width=150, minwidth=120)
-        self.tree.column("Наименование", width=200, minwidth=180)
-        self.tree.column("Цена", width=80, minwidth=70, anchor="e")
-        self.tree.column("Количество", width=80, minwidth=70, anchor="center")
-        self.tree.column("Поставщик", width=150, minwidth=120, anchor="w")
+        # === Настройка стилей и выравнивания ===
+        center_align = "center"
 
-        self.tree.heading("#0", text="✓")
-        self.tree.heading("Артикул", text="Артикул")
-        self.tree.heading("Наименование", text="Наименование")
-        self.tree.heading("Цена", text="Цена")
-        self.tree.heading("Количество", text="Кол-во")
-        self.tree.heading("Поставщик", text="Поставщик")
+        # Колонка #0 теперь для ФОТО
+        self.tree.column("#0", width=190, minwidth=190, anchor=center_align)
+        self.tree.heading("#0", text="Фото", anchor=center_align)
 
+        # Остальные колонки
+        self.tree.column("Чекбокс", width=50, minwidth=50, anchor=center_align)
+        self.tree.column("Артикул", width=150, minwidth=120, anchor=center_align)
+        self.tree.column("Наименование", width=200, minwidth=180, anchor=center_align)
+        self.tree.column("Цена", width=80, minwidth=70, anchor=center_align)
+        self.tree.column("Количество", width=80, minwidth=70, anchor=center_align)
+        self.tree.column("Поставщик", width=150, minwidth=120, anchor=center_align)
+        self.tree.column("Сумма", width=100, minwidth=90, anchor=center_align)
+
+        # Заголовки
+        self.tree.heading("Чекбокс", text="✓", anchor=center_align)
+        self.tree.heading("Артикул", text="Артикул", anchor=center_align)
+        self.tree.heading("Наименование", text="Наименование", anchor=center_align)
+        self.tree.heading("Цена", text="Цена", anchor=center_align)
+        self.tree.heading("Количество", text="Кол-во", anchor=center_align)
+        self.tree.heading("Поставщик", text="Поставщик", anchor=center_align)
+        self.tree.heading("Сумма", text="Сумма", anchor=center_align)
+
+        # === Устанавливаем высоту строки = 190px ===
+        style = ttk.Style()
+        style.configure("Custom.Treeview", rowheight=190)
+
+        # Scrollbar
         tree_scrollbar = ttk.Scrollbar(tree_inner_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.config(yscrollcommand=tree_scrollbar.set)
         self.tree.pack(side=tk.LEFT, fill="both", expand=True)
         tree_scrollbar.pack(side=tk.RIGHT, fill="y")
 
-        # ИСПРАВЛЕННЫЕ биндинги - только один обработчик для одинарного клика
+        # Биндинги
         self.tree.bind("<Double-1>", self.on_tree_double_click)
-        self.tree.bind("<Button-1>", self.on_tree_single_click)  # Объединенный обработчик
+        self.tree.bind("<Button-1>", self.on_tree_single_click)
+
+        # Хранилище изображений (чтобы GC не удалил)
+        self.tree_images = {}
+
 
     def create_control_buttons(self):
         """Создание кнопок управления (внутренние отступы 10)"""
@@ -954,20 +973,22 @@ class PurchaseTableGUI:
                         self.update_tree()
 
     def on_tree_double_click(self, event):
-        """Обработка двойного клика - изменение количества с кастомным диалогом"""
+        """Обработка двойного клика - изменение количества"""
         item = self.tree.selection()[0] if self.tree.selection() else None
         if not item:
             return
+
         values = self.tree.item(item)['values']
-        if not values:
+        if not values or len(values) < 5:
             return
-        article = values[0]
+
+        article = values[1]  # Артикул в позиции 1
         try:
-            current_qty = int(values[3])
+            current_qty = int(values[4])  # Количество в позиции 4
         except (ValueError, IndexError):
             current_qty = 1
 
-        # Используем кастомный диалог вместо стандартного
+        # Используем кастомный диалог
         dialog = CustomQuantityDialog(
             self.root,
             "Изменить количество",
@@ -982,26 +1003,57 @@ class PurchaseTableGUI:
                 self.update_tree()
 
     def update_tree(self):
-        """Обновление дерева товаров"""
-        # Очищаем дерево
+        """Обновление дерева товаров с правильным размещением изображений"""
+        # Добавляем импорт функций для обработки изображений
+        from utils.image_utils import create_rounded_image, pil_to_photoimage
+
         for item in self.tree.get_children():
             self.tree.delete(item)
-        # Получаем данные от backend
+        self.tree_images.clear()
+
         display_items = self.backend.get_order_items_for_display()
-        # Добавляем товары
+
         for item_data in display_items:
             checkbox = "☑" if item_data['enabled'] else "☐"
+
+            # Обрабатываем изображение с закруглением углов
+            photo_image = None
+            if item_data['photo']:
+                try:
+                    # ИСПРАВЛЕНИЕ: Создаем скругленное изображение
+                    rounded_img = create_rounded_image(item_data['photo'], size=(186, 186), corner_radius=15)
+                    if rounded_img:
+                        photo_image = pil_to_photoimage(rounded_img)
+                        # Сохраняем ссылку на изображение
+                        self.tree_images[item_data['article']] = photo_image
+                except Exception as e:
+                    print(f"Ошибка обработки изображения для {item_data['article']}: {e}")
+
+            # Рассчитываем сумму
+            total_sum = item_data['price'] * item_data['quantity']
+
+            # ИСПРАВЛЕНИЕ: Новая структура значений для колонок
             values = (
-                item_data['article'],
-                item_data['name'],
-                f"{item_data['price']:.2f}",
-                item_data['quantity'],
-                item_data['selected_supplier']  # Отображаем выбранного поставщика
+                checkbox,  # Чекбокс (колонка 1)
+                item_data['article'],  # Артикул (колонка 2)
+                item_data['name'],  # Наименование (колонка 3)
+                f"{item_data['price']:.2f}",  # Цена (колонка 4)
+                item_data['quantity'],  # Количество (колонка 5)
+                item_data['selected_supplier'],  # Поставщик (колонка 6)
+                f"{total_sum:.2f}"  # Сумма (колонка 7)
             )
-            self.tree.insert("", tk.END, text=checkbox, values=values, tags=(item_data['article'],))
+
+            # ИСПРАВЛЕНИЕ: Вставляем строку с изображением в колонке #0
+            item_id = self.tree.insert(
+                "", tk.END,
+                text="",  # Пустой текст, так как изображение будет отображаться
+                values=values,
+                tags=(item_data['article'],),
+                image=photo_image  # Изображение устанавливается сразу при создании
+            )
 
     def on_tree_single_click(self, event):
-        """Объединенный обработчик одинарного клика по дереву"""
+        """Обработчик одинарного клика по дереву с новой структурой колонок"""
         region = self.tree.identify_region(event.x, event.y)
         column = self.tree.identify_column(event.x)
         row = self.tree.identify_row(event.y)
@@ -1009,28 +1061,38 @@ class PurchaseTableGUI:
         if not row:
             return
 
-        # Если кликнули по колонке "Поставщик" (#5), показываем селектор
-        if region == "cell" and column == "#5":
+        # Новая структура колонок:
+        # #0 - фото
+        # #1 - чекбокс
+        # #2 - артикул
+        # #3 - наименование
+        # #4 - цена
+        # #5 - количество
+        # #6 - поставщик
+        # #7 - сумма
+
+        # Если кликнули по колонке "Поставщик" (#6)
+        if region == "cell" and column == "#6":
             self.show_supplier_selector(event, row)
-        # Если кликнули по колонке с чекбоксом (#0), переключаем состояние
-        elif region == "tree" and column == "#0":
+        # Если кликнули по колонке с чекбоксом (#1)
+        elif region == "cell" and column == "#1":
             self.toggle_item_checkbox(row)
 
     def toggle_item_checkbox(self, row):
         """Переключение чекбокса товара"""
         values = self.tree.item(row)['values']
-        if values:
-            article = values[0]
+        if values and len(values) > 1:
+            article = values[1]  # Артикул теперь в позиции 1 (второй элемент values)
             if self.backend.toggle_item_enabled(article):
                 self.update_tree()
 
     def show_supplier_selector(self, event, row):
-        """Показать селектор поставщика"""
-        # Получаем артикул из значений строки
+        """Показ селектора поставщика с новой структурой"""
         values = self.tree.item(row)['values']
-        if not values:
+        if not values or len(values) < 2:
             return
-        article = values[0]
+
+        article = values[1]  # Артикул в позиции 1
 
         # Получаем список всех поставщиков для этого артикула из backend
         display_items = self.backend.get_order_items_for_display()
@@ -1040,12 +1102,7 @@ class PurchaseTableGUI:
 
         all_suppliers = target_item['all_suppliers']
         if len(all_suppliers) <= 1:
-            print(f"У артикула {article} только один поставщик: {all_suppliers}")
             return
-
-        print(f"Показываем селектор для артикула {article}")
-        print(f"Доступные поставщики: {all_suppliers}")
-        print(f"Текущий поставщик: {target_item['selected_supplier']}")
 
         # Создаем селектор как всплывающее окно
         selector = SupplierSelectorPopup(
@@ -1059,14 +1116,10 @@ class PurchaseTableGUI:
         # Ждем результат
         self.root.wait_window(selector.popup)
 
-        # Проверяем результат
+        # Проверяем результат и обновляем
         if selector.result and selector.result != target_item['selected_supplier']:
-            print(f"Обновляем поставщика: {target_item['selected_supplier']} -> {selector.result}")
             if self.backend.update_item_supplier(article, selector.result):
                 self.update_tree()
-                print("Дерево обновлено успешно")
-            else:
-                print("Ошибка при обновлении поставщика в backend")
 
     def generate_purchase_list(self):
         """Генерация листа закупки"""

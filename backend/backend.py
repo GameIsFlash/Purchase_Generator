@@ -1,7 +1,7 @@
 import threading
 import json
 from pathlib import Path
-import logging  # <-- Добавлено
+import logging
 from config import FILE_ERRORS, DATA_ERRORS, IMAGE_ERRORS, EXCEL_ERRORS
 from backend.backend_config import DEFAULT_PATHS, ORDER_CONFIG
 from data_engine.data_reader import DataReader
@@ -339,7 +339,7 @@ class PurchaseTableBackend:
         return self.all_products.copy()  # Возвращаем копию, чтобы избежать неожиданных изменений
 
     def get_order_items_for_display(self) -> list[dict]:
-        """Получить список товаров для отображения в UI, включая информацию о поставщике."""
+        """Получить список товаров для отображения в UI, включая фото и сумму."""
         display_items = []
         for article, item_data in self.order_items.items():
             product = item_data['product']
@@ -352,14 +352,24 @@ class PurchaseTableBackend:
             except (ValueError, TypeError):
                 price = 0.0
 
+            # Рассчитываем сумму
+            total_sum = price * quantity
+
+            # Получаем изображение
+            processed_image = None
+            if self.data_reader:
+                processed_image = self.data_reader.process_image(article)
+
             display_items.append({
                 'article': article,
                 'name': product.get('name', 'Неизвестно'),
                 'price': price,
                 'quantity': quantity,
                 'enabled': enabled,
-                'selected_supplier': selected_supplier,  # Новое поле
-                'all_suppliers': [s['supplier'] for s in item_data['all_suppliers']]  # Список имен для UI
+                'selected_supplier': selected_supplier,
+                'all_suppliers': [s['supplier'] for s in item_data['all_suppliers']],
+                'photo': processed_image,  # ← Добавляем фото
+                'total_sum': total_sum  # ← Добавляем сумму
             })
 
         return display_items

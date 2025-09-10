@@ -1,5 +1,5 @@
 {
-    "database_file": "data/tables/database.xlsx",
+    "database_file": "data/table/database.xlsx",
     "images_dir": "data/images",
     "output_dir": "output"
 }
