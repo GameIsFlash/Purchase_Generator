@@ -243,11 +243,6 @@ class ExcelGenerator:
             cell_c.alignment = center_align
             cell_c.number_format = '#,##0.00'
 
-            # Артикул
-            cell_d = worksheet.cell(row=row_num, column=4, value=item['article'])
-            cell_d.border = border
-            cell_d.alignment = center_align
-
         return temp_files
 
     def _create_total_row(self, worksheet, items):
@@ -287,7 +282,7 @@ class ExcelGenerator:
     def _create_general_total_row(self, worksheet, items):
         """Создание итоговой строки для общей таблицы наличия."""
         total_row = len(items) + 2
-        worksheet.merge_cells(f'A{total_row}:D{total_row}')
+        worksheet.merge_cells(f'A{total_row}:C{total_row}')
 
         border = Border(
             left=Side(border_style='thick', color='000000'),
@@ -303,7 +298,7 @@ class ExcelGenerator:
         total_cell.alignment = center_align
         total_cell.border = border
 
-        for col in [2, 3, 4]:
+        for col in [2, 3]:
             worksheet.cell(row=total_row, column=col).border = border
 
     def _save_temp_image(self, processed_image, row_num):
