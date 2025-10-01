@@ -213,7 +213,7 @@ echo Шаг 5: Подписывание файлов...
 set SIGNTOOL_PATH=C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe
 if exist "!SIGNTOOL_PATH!" (
     echo Подписывание EXE...
-    "!SIGNTOOL_PATH!" sign /a /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /v "dist\PurchaseGenerator\PurchaseGenerator.exe"
+    "!SIGNTOOL_PATH!" sign /a /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /v "dist\PurchaseGenerator.exe"
     if !errorlevel! neq 0 (
         echo Предупреждение: Не удалось подписать EXE, продолжаем...
     )
@@ -270,6 +270,10 @@ if defined GIT_ERROR (
 
         if !errorlevel! neq 0 (
             echo Ошибка при создании релиза
+            echo Убедись, что:
+            echo 1. Установлен GitHub CLI: winget install GitHub.cli
+            echo 2. Выполнен вход: gh auth login
+            echo 3. Токен имеет права на создание релизов
         ) else (
             echo Релиз успешно создан на GitHub!
         )
@@ -277,59 +281,6 @@ if defined GIT_ERROR (
         echo ОШИБКА: Файл установщика не найден: Output\PackageGeneratorApp.exe
     )
 
-    del changelog.md 2>nul
-)
-
-REM --- СОЗДАНИЕ РЕЛИЗА НА GITHUB ---
-echo Шаг 6: Создание релиза на GitHub...
-
-if defined GIT_ERROR (
-    echo Пропускаем создание релиза из-за ошибок Git
-) else (
-    echo Создание описания релиза...
-    echo # Release v!NEW_VERSION! > changelog.md
-    echo. >> changelog.md
-    echo ## Что нового в этой версии: >> changelog.md
-    echo. >> changelog.md
-
-    REM --- ДОБАВЛЯЕМ ОПИСАНИЕ ИЗ ФАЙЛА ИЛИ СТАНДАРТНОЕ ---
-    if exist "changelog_temp.txt" (
-        type changelog_temp.txt >> changelog.md
-        del changelog_temp.txt
-    ) else (
-        if defined FIRST_RELEASE (
-            echo - Первый релиз приложения >> changelog.md
-            echo - Все основные функции работают >> changelog.md
-        ) else (
-            echo - Автоматическое обновление >> changelog.md
-            echo - Исправление ошибок >> changelog.md
-            echo - Улучшение производительности >> changelog.md
-        )
-    )
-
-    echo. >> changelog.md
-    echo ## Установка: >> changelog.md
-    echo 1. Скачайте ^`PackageGeneratorApp_Setup.exe^` >> changelog.md
-    echo 2. Запустите установщик >> changelog.md
-    echo 3. Приложение автоматически обновляется >> changelog.md
-
-    REM --- УДАЛЯЕМ ФАЙЛ ОПИСАНИЯ ПОСЛЕ ИСПОЛЬЗОВАНИЯ ---
-    if exist "update_description.txt" (
-        echo Удаление update_description.txt после использования...
-        del update_description.txt
-    )
-
-    gh release create v!NEW_VERSION! "Output\PackageGeneratorApp_Setup.exe" --title "v!NEW_VERSION!" --notes-file changelog.md
-
-    if !errorlevel! neq 0 (
-        echo Ошибка при создании релиза
-        echo Убедись, что:
-        echo 1. Установлен GitHub CLI: winget install GitHub.cli
-        echo 2. Выполнен вход: gh auth login
-        echo 3. Токен имеет права на создание релизов
-    )
-
-    REM --- ОЧИСТКА ---
     del changelog.md 2>nul
 )
 
