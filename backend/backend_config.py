@@ -15,7 +15,6 @@ DEFAULT_PATHS = {
 ORDER_CONFIG = {
     # Заказ по умолчанию (для демо/тестирования)
     'default_order': {
-        "vl-cronier-ployka-cr-2018": 1,
     },
     # Ограничения
     'max_quantity': 9999,        # Максимально допустимое количество товара
