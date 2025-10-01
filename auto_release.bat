@@ -12,88 +12,142 @@ REM --- КОНФИГУРАЦИЯ ---
 set REPO_PATH=C:\Dev\Purchase_generator_final
 set GITHUB_USER=GameIsFlash
 set GITHUB_REPO=Purchase_Generator
-set /a CURRENT_BUILD=0
 
-REM --- ЧТЕНИЕ ТЕКУЩЕЙ ВЕРСИИ ---
-for /f "tokens=2 delims=^=" %%i in ('findstr "CURRENT_VERSION" main.py') do (
-    set CURRENT_VERSION=%%i
-    set CURRENT_VERSION=!CURRENT_VERSION: =!
-    set CURRENT_VERSION=!CURRENT_VERSION:'=!
-    set CURRENT_VERSION=!CURRENT_VERSION:"=!
-)
+REM --- СОЗДАЕМ ВРЕМЕННЫЕ PYTHON СКРИПТЫ ДЛЯ ЧТЕНИЯ ВЕРСИИ ---
+echo import re > get_version.py
+echo content = open('main.py', 'r', encoding='utf-8').read() >> get_version.py
+echo match = re.search(r'CURRENT_VERSION\s*=\s*["'']([0-9.]+)["'']', content) >> get_version.py
+echo if match: >> get_version.py
+echo     print(match.group(1)) >> get_version.py
+echo else: >> get_version.py
+echo     print('0.0.0') >> get_version.py
 
-echo Текущая версия: !CURRENT_VERSION!
-echo.
+REM --- ПОЛУЧЕНИЕ ТЕКУЩЕЙ ВЕРСИИ ---
+echo Получение текущей версии...
+python get_version.py > temp_version.txt
+set /p CURRENT_VERSION=<temp_version.txt
+del get_version.py
+del temp_version.txt
 
-REM --- ЗАПРОС НОВОЙ ВЕРСИИ ---
-set /p VERSION_TYPE="Выбери тип обновления (1 - patch, 2 - minor, 3 - major): "
-
-for /f "tokens=1,2,3 delims=." %%a in ("!CURRENT_VERSION!") do (
-    set MAJOR=%%a
-    set MINOR=%%b
-    set PATCH=%%c
-)
-
-if "!VERSION_TYPE!"=="1" (
-    set /a NEW_PATCH=!PATCH!+1
-    set NEW_VERSION=!MAJOR!.!MINOR!.!NEW_PATCH!
-) else if "!VERSION_TYPE!"=="2" (
-    set /a NEW_MINOR=!MINOR!+1
-    set NEW_VERSION=!MAJOR!.!NEW_MINOR!.0
-) else if "!VERSION_TYPE!"=="3" (
-    set /a NEW_MAJOR=!MAJOR!+1
-    set NEW_VERSION=!NEW_MAJOR!.0.0
+if "!CURRENT_VERSION!"=="0.0.0" (
+    echo Не удалось найти CURRENT_VERSION в main.py
+    echo Создаем первую версию 1.0.0
+    set CURRENT_VERSION=1.0.0
+    set NEW_VERSION=1.0.0
+    set FIRST_RELEASE=1
 ) else (
-    echo Неверный выбор!
-    pause
-    exit /b 1
-)
+    echo Текущая версия: !CURRENT_VERSION!
+    echo.
 
-set /p CONFIRM="Новая версия будет: !NEW_VERSION!. Продолжить? (y/n): "
-if /i not "!CONFIRM!"=="y" (
-    echo Отменено.
-    pause
-    exit /b 1
+    REM --- РАЗБИЕНИЕ ВЕРСИИ НА ЧАСТИ ---
+    for /f "tokens=1,2,3 delims=." %%a in ("!CURRENT_VERSION!") do (
+        set MAJOR=%%a
+        set MINOR=%%b
+        set PATCH=%%c
+    )
+
+    REM --- ЗАПРОС НОВОЙ ВЕРСИИ ---
+    set /p VERSION_TYPE="Выбери тип обновления (1 - patch, 2 - minor, 3 - major): "
+
+    if "!VERSION_TYPE!"=="1" (
+        set /a NEW_PATCH=!PATCH!+1
+        set NEW_VERSION=!MAJOR!.!MINOR!.!NEW_PATCH!
+    ) else if "!VERSION_TYPE!"=="2" (
+        set /a NEW_MINOR=!MINOR!+1
+        set NEW_VERSION=!MAJOR!.!NEW_MINOR!.0
+    ) else if "!VERSION_TYPE!"=="3" (
+        set /a NEW_MAJOR=!MAJOR!+1
+        set NEW_VERSION=!NEW_MAJOR!.0.0
+    ) else (
+        echo Неверный выбор!
+        pause
+        exit /b 1
+    )
+
+    set /p CONFIRM="Новая версия будет: !NEW_VERSION!. Продолжить? (y/n): "
+    if /i not "!CONFIRM!"=="y" (
+        echo Отменено.
+        pause
+        exit /b 1
+    )
 )
 
 echo.
 echo 🚀 Начинаем процесс релиза v!NEW_VERSION!...
 echo.
 
+REM --- СОЗДАЕМ СКРИПТ ДЛЯ ОБНОВЛЕНИЯ main.py ---
+echo import re > update_main.py
+echo content = open('main.py', 'r', encoding='utf-8').read() >> update_main.py
+echo new_version = "!NEW_VERSION!" >> update_main.py
+echo new_content = re.sub(r'CURRENT_VERSION\s*=\s*["'']([0-9.]+)["'']', 'CURRENT_VERSION = "' + new_version + '"', content) >> update_main.py
+echo open('main.py', 'w', encoding='utf-8').write(new_content) >> update_main.py
+
+REM --- СОЗДАЕМ СКРИПТ ДЛЯ ОБНОВЛЕНИЯ create_installer.iss ---
+echo import re > update_iss.py
+echo content = open('create_installer.iss', 'r', encoding='utf-8').read() >> update_iss.py
+echo new_version = "!NEW_VERSION!" >> update_iss.py
+echo content = re.sub(r'AppVersion=[0-9.]+', 'AppVersion=' + new_version, content) >> update_iss.py
+echo content = re.sub(r'VersionInfoVersion=[0-9.]+', 'VersionInfoVersion=' + new_version, content) >> update_iss.py
+echo open('create_installer.iss', 'w', encoding='utf-8').write(content) >> update_iss.py
+
 REM --- ОБНОВЛЕНИЕ ВЕРСИИ В ФАЙЛАХ ---
 echo Шаг 1: Обновление версии в файлах...
 
-REM Обновление main.py
-python -c "import re; content = open('main.py', 'r', encoding='utf-8').read(); new_content = re.sub(r'CURRENT_VERSION = \"\d+\.\d+\.\d+\"', 'CURRENT_VERSION = \"!NEW_VERSION!\"', content); open('main.py', 'w', encoding='utf-8').write(new_content)"
+echo Обновление main.py...
+python update_main.py
 if !errorlevel! neq 0 (
     echo Ошибка при обновлении main.py
     pause
     exit /b 1
 )
 
-REM Обновление create_installer.iss
-python -c "import re; content = open('create_installer.iss', 'r', encoding='utf-8').read(); content = re.sub(r'AppVersion=\d+\.\d+\.\d+', 'AppVersion=!NEW_VERSION!', content); content = re.sub(r'VersionInfoVersion=\d+\.\d+\.\d+', 'VersionInfoVersion=!NEW_VERSION!', content); open('create_installer.iss', 'w', encoding='utf-8').write(content)"
+echo Обновление create_installer.iss...
+python update_iss.py
 if !errorlevel! neq 0 (
     echo Ошибка при обновлении create_installer.iss
     pause
     exit /b 1
 )
 
+del update_main.py
+del update_iss.py
+
+REM --- ЧТЕНИЕ ОПИСАНИЯ ОБНОВЛЕНИЯ ---
+echo Шаг 2: Чтение описания обновления...
+
+if exist "update_description.txt" (
+    echo Найден файл update_description.txt
+    copy update_description.txt changelog_temp.txt >nul
+) else (
+    echo Файл update_description.txt не найден, создаем стандартное описание
+    echo. > changelog_temp.txt
+)
+
 REM --- КОММИТ И ПУШ НА GITHUB ---
-echo Шаг 2: Коммит и пуш на GitHub...
+echo Шаг 3: Коммит и пуш на GitHub...
 
 git add .
 git commit -m "🚀 Release v!NEW_VERSION!"
-git push origin main
+git push origin master
 
 if !errorlevel! neq 0 (
     echo Ошибка при пуше на GitHub
-    pause
-    exit /b 1
+    echo Пробуем принудительный пуш...
+    git push origin master --force
+    if !errorlevel! neq 0 (
+        echo Ошибка при принудительном пуше
+        pause
+        exit /b 1
+    )
 )
 
 REM --- СБОРКА ПРИЛОЖЕНИЯ ---
-echo Шаг 3: Сборка приложения...
+echo Шаг 4: Сборка приложения...
+
+echo Очистка предыдущих сборок...
+if exist "build" rmdir /s /q "build"
+if exist "dist" rmdir /s /q "dist"
 
 echo Сборка EXE через PyInstaller...
 pyinstaller PurchaseGenerator.spec
@@ -111,52 +165,81 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
-REM --- БЕСПЛАТНОЕ ПОДПИСЫВАНИЕ ЧЕРЕЗ SignTool ---
-echo Шаг 4: Подписывание файлов...
+REM --- ПОДПИСЫВАНИЕ ФАЙЛОВ ---
+echo Шаг 5: Подписывание файлов...
 
-REM Проверяем наличие Windows SDK
 set SIGNTOOL_PATH=C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe
-if not exist "!SIGNTOOL_PATH!" (
-    echo Windows SDK не найден. Пропускаем подписывание.
-    echo Для подписывания установи Windows SDK
-) else (
+if exist "!SIGNTOOL_PATH!" (
     echo Подписывание EXE...
     "!SIGNTOOL_PATH!" sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /v "dist\PurchaseGenerator\PurchaseGenerator.exe"
 
     echo Подписывание установщика...
     "!SIGNTOOL_PATH!" sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /v "Output\PackageGeneratorApp_Setup.exe"
+) else (
+    echo Windows SDK не найден. Пропускаем подписывание.
 )
 
 REM --- СОЗДАНИЕ РЕЛИЗА НА GITHUB ---
-echo Шаг 5: Создание релиза на GitHub...
+echo Шаг 6: Создание релиза на GitHub...
 
-REM Создаем временный файл с описанием
-echo Release v!NEW_VERSION! > temp_changelog.md
-echo. >> temp_changelog.md
-echo Что нового в этой версии: >> temp_changelog.md
-echo - Автоматическое обновление >> temp_changelog.md
-echo - Исправление ошибок >> temp_changelog.md
-echo - Улучшение производительности >> temp_changelog.md
+echo Создание описания релиза...
+echo # Release v!NEW_VERSION! > changelog.md
+echo. >> changelog.md
+echo ## Что нового в этой версии: >> changelog.md
+echo. >> changelog.md
 
-REM Создаем релиз через GitHub CLI
-gh release create v!NEW_VERSION! "Output\PackageGeneratorApp_Setup.exe" --title "v!NEW_VERSION!" --notes-file temp_changelog.md
+REM --- ДОБАВЛЯЕМ ОПИСАНИЕ ИЗ ФАЙЛА ИЛИ СТАНДАРТНОЕ ---
+if exist "changelog_temp.txt" (
+    type changelog_temp.txt >> changelog.md
+    del changelog_temp.txt
+) else (
+    if defined FIRST_RELEASE (
+        echo - Первый релиз приложения >> changelog.md
+        echo - Все основные функции работают >> changelog.md
+    ) else (
+        echo - Автоматическое обновление >> changelog.md
+        echo - Исправление ошибок >> changelog.md
+        echo - Улучшение производительности >> changelog.md
+    )
+)
+
+echo. >> changelog.md
+echo ## Установка: >> changelog.md
+echo 1. Скачайте ^`PackageGeneratorApp_Setup.exe^` >> changelog.md
+echo 2. Запустите установщик >> changelog.md
+echo 3. Приложение автоматически обновляется >> changelog.md
+
+REM --- УДАЛЯЕМ ФАЙЛ ОПИСАНИЯ ПОСЛЕ ИСПОЛЬЗОВАНИЯ ---
+if exist "update_description.txt" (
+    echo Удаление update_description.txt после использования...
+    del update_description.txt
+)
+
+gh release create v!NEW_VERSION! "Output\PackageGeneratorApp_Setup.exe" --title "v!NEW_VERSION!" --notes-file changelog.md
 
 if !errorlevel! neq 0 (
     echo Ошибка при создании релиза
-    echo Убедись, что установлен GitHub CLI и выполнен gh auth login
+    echo Убедись, что:
+    echo 1. Установлен GitHub CLI: winget install GitHub.cli
+    echo 2. Выполнен вход: gh auth login
+    echo 3. Токен имеет права на создание релизов
 )
 
 REM --- ОЧИСТКА ---
-del temp_changelog.md
+del changelog.md 2>nul
 
 echo.
 echo ========================================
 echo ✅ РЕЛИЗ v!NEW_VERSION! УСПЕШНО ЗАВЕРШЕН!
 echo ========================================
 echo.
-echo Что было сделано:
-echo ✓ Версия обновлена с !CURRENT_VERSION! до !NEW_VERSION!
-echo ✓ Код запушен на GitHub
+if defined FIRST_RELEASE (
+    echo 🎉 СОЗДАН ПЕРВЫЙ РЕЛИЗ!
+) else (
+    echo Что было сделано:
+    echo ✓ Версия обновлена с !CURRENT_VERSION! до !NEW_VERSION!
+)
+echo ✓ Код запушен на GitHub в ветку master
 echo ✓ EXE файл собран
 echo ✓ Установщик создан
 echo ✓ Файлы подписаны
