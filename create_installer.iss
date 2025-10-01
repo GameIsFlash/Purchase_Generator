@@ -3,7 +3,7 @@
 
 [Setup]
 AppName=PackageGeneratorApp
-AppVersion=1.0.8
+AppVersion=1.0.9
 AppPublisher=GameIsFlash
 AppPublisherURL=https://github.com/GameIsFlash/Purchase_Generator
 DefaultDirName={autopf}\PackageGeneratorApp
@@ -15,9 +15,16 @@ Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=admin
 WizardStyle=modern
-VersionInfoVersion=1.0.8
+VersionInfoVersion=1.0.9
 VersionInfoCompany=GameIsFlash
 VersionInfoDescription=Генератор покупок
+; Разрешаем установку поверх старой версии
+AllowNoIcons=yes
+DisableProgramGroupPage=yes
+; Важно для автоматических обновлений
+DisableWelcomePage=no
+CloseApplications=yes
+RestartApplications=yes
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
