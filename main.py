@@ -9,7 +9,7 @@ from pathlib import Path
 import threading
 
 # ВЕРСИЯ ПРИЛОЖЕНИЯ - автоматически обновляется скриптом релиза
-CURRENT_VERSION = "1.0.10"
+CURRENT_VERSION = "1.0.11"
 
 
 def check_for_updates():
