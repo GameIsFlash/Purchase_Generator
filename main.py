@@ -8,7 +8,7 @@ from tkinter import messagebox
 from pathlib import Path
 
 # ВЕРСИЯ ПРИЛОЖЕНИЯ - автоматически обновляется скриптом релиза
-CURRENT_VERSION = "1.0.2"
+CURRENT_VERSION = "1.0.3"
 
 
 def check_for_updates():

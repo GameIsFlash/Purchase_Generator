@@ -12,6 +12,27 @@ REM --- КОНФИГУРАЦИЯ ---
 set REPO_PATH=C:\Dev\Purchase_generator_final
 set GITHUB_USER=GameIsFlash
 set GITHUB_REPO=Purchase_Generator
+set GITHUB_URL=https://github.com/GameIsFlash/Purchase_Generator.git
+
+REM --- ПРОВЕРКА GIT РЕПОЗИТОРИЯ ---
+echo Проверка Git репозитория...
+git status >nul 2>&1
+if !errorlevel! neq 0 (
+    echo ОШИБКА: Это не Git репозиторий!
+    echo Инициализируем Git...
+    git init
+    git add .
+    git commit -m "Initial commit"
+)
+
+REM --- ПРОВЕРКА REMOTE ORIGIN ---
+echo Проверка remote origin...
+git remote get-url origin >nul 2>&1
+if !errorlevel! neq 0 (
+    echo Remote origin не настроен.
+    echo Добавляем origin: !GITHUB_URL!
+    git remote add origin "!GITHUB_URL!"
+)
 
 REM --- СОЗДАЕМ ВРЕМЕННЫЕ PYTHON СКРИПТЫ ДЛЯ ЧТЕНИЯ ВЕРСИИ ---
 echo import re > get_version.py
@@ -129,17 +150,25 @@ echo Шаг 3: Коммит и пуш на GitHub...
 
 git add .
 git commit -m "🚀 Release v!NEW_VERSION!"
-git push origin master
+
+echo Пуш в репозиторий...
+git push -u origin master
 
 if !errorlevel! neq 0 (
-    echo Ошибка при пуше на GitHub
-    echo Пробуем принудительный пуш...
-    git push origin master --force
-    if !errorlevel! neq 0 (
-        echo Ошибка при принудительном пуше
-        pause
-        exit /b 1
-    )
+    echo ОШИБКА: Не удалось запушить в GitHub
+    echo.
+    echo ВОЗМОЖНЫЕ ПРИЧИНЫ:
+    echo 1. Нет доступа к репозиторию
+    echo 2. Неправильный URL репозитория
+    echo 3. Нужна аутентификация
+    echo.
+    echo Проверь:
+    echo - Правильность URL: !GITHUB_URL!
+    echo - Наличие репозитория: https://github.com/GameIsFlash/Purchase_Generator
+    echo - Настройки доступа
+    echo.
+    echo Продолжаем сборку без пуша на GitHub...
+    set GIT_ERROR=1
 )
 
 REM --- СБОРКА ПРИЛОЖЕНИЯ ---
@@ -182,51 +211,55 @@ if exist "!SIGNTOOL_PATH!" (
 REM --- СОЗДАНИЕ РЕЛИЗА НА GITHUB ---
 echo Шаг 6: Создание релиза на GitHub...
 
-echo Создание описания релиза...
-echo # Release v!NEW_VERSION! > changelog.md
-echo. >> changelog.md
-echo ## Что нового в этой версии: >> changelog.md
-echo. >> changelog.md
-
-REM --- ДОБАВЛЯЕМ ОПИСАНИЕ ИЗ ФАЙЛА ИЛИ СТАНДАРТНОЕ ---
-if exist "changelog_temp.txt" (
-    type changelog_temp.txt >> changelog.md
-    del changelog_temp.txt
+if defined GIT_ERROR (
+    echo Пропускаем создание релиза из-за ошибок Git
 ) else (
-    if defined FIRST_RELEASE (
-        echo - Первый релиз приложения >> changelog.md
-        echo - Все основные функции работают >> changelog.md
+    echo Создание описания релиза...
+    echo # Release v!NEW_VERSION! > changelog.md
+    echo. >> changelog.md
+    echo ## Что нового в этой версии: >> changelog.md
+    echo. >> changelog.md
+
+    REM --- ДОБАВЛЯЕМ ОПИСАНИЕ ИЗ ФАЙЛА ИЛИ СТАНДАРТНОЕ ---
+    if exist "changelog_temp.txt" (
+        type changelog_temp.txt >> changelog.md
+        del changelog_temp.txt
     ) else (
-        echo - Автоматическое обновление >> changelog.md
-        echo - Исправление ошибок >> changelog.md
-        echo - Улучшение производительности >> changelog.md
+        if defined FIRST_RELEASE (
+            echo - Первый релиз приложения >> changelog.md
+            echo - Все основные функции работают >> changelog.md
+        ) else (
+            echo - Автоматическое обновление >> changelog.md
+            echo - Исправление ошибок >> changelog.md
+            echo - Улучшение производительности >> changelog.md
+        )
     )
+
+    echo. >> changelog.md
+    echo ## Установка: >> changelog.md
+    echo 1. Скачайте ^`PackageGeneratorApp_Setup.exe^` >> changelog.md
+    echo 2. Запустите установщик >> changelog.md
+    echo 3. Приложение автоматически обновляется >> changelog.md
+
+    REM --- УДАЛЯЕМ ФАЙЛ ОПИСАНИЯ ПОСЛЕ ИСПОЛЬЗОВАНИЯ ---
+    if exist "update_description.txt" (
+        echo Удаление update_description.txt после использования...
+        del update_description.txt
+    )
+
+    gh release create v!NEW_VERSION! "Output\PackageGeneratorApp_Setup.exe" --title "v!NEW_VERSION!" --notes-file changelog.md
+
+    if !errorlevel! neq 0 (
+        echo Ошибка при создании релиза
+        echo Убедись, что:
+        echo 1. Установлен GitHub CLI: winget install GitHub.cli
+        echo 2. Выполнен вход: gh auth login
+        echo 3. Токен имеет права на создание релизов
+    )
+
+    REM --- ОЧИСТКА ---
+    del changelog.md 2>nul
 )
-
-echo. >> changelog.md
-echo ## Установка: >> changelog.md
-echo 1. Скачайте ^`PackageGeneratorApp_Setup.exe^` >> changelog.md
-echo 2. Запустите установщик >> changelog.md
-echo 3. Приложение автоматически обновляется >> changelog.md
-
-REM --- УДАЛЯЕМ ФАЙЛ ОПИСАНИЯ ПОСЛЕ ИСПОЛЬЗОВАНИЯ ---
-if exist "update_description.txt" (
-    echo Удаление update_description.txt после использования...
-    del update_description.txt
-)
-
-gh release create v!NEW_VERSION! "Output\PackageGeneratorApp_Setup.exe" --title "v!NEW_VERSION!" --notes-file changelog.md
-
-if !errorlevel! neq 0 (
-    echo Ошибка при создании релиза
-    echo Убедись, что:
-    echo 1. Установлен GitHub CLI: winget install GitHub.cli
-    echo 2. Выполнен вход: gh auth login
-    echo 3. Токен имеет права на создание релизов
-)
-
-REM --- ОЧИСТКА ---
-del changelog.md 2>nul
 
 echo.
 echo ========================================
@@ -239,13 +272,18 @@ if defined FIRST_RELEASE (
     echo Что было сделано:
     echo ✓ Версия обновлена с !CURRENT_VERSION! до !NEW_VERSION!
 )
-echo ✓ Код запушен на GitHub в ветку master
 echo ✓ EXE файл собран
 echo ✓ Установщик создан
 echo ✓ Файлы подписаны
-echo ✓ Релиз создан на GitHub
-echo.
-echo Ссылка на релиз: https://github.com/!GITHUB_USER!/!GITHUB_REPO!/releases/tag/v!NEW_VERSION!
+if defined GIT_ERROR (
+    echo ⚠ Код НЕ запушен на GitHub (ошибка Git)
+    echo ⚠ Релиз НЕ создан на GitHub
+) else (
+    echo ✓ Код запушен на GitHub
+    echo ✓ Релиз создан на GitHub
+    echo.
+    echo Ссылка на релиз: https://github.com/!GITHUB_USER!/!GITHUB_REPO!/releases/tag/v!NEW_VERSION!
+)
 echo.
 
 pause

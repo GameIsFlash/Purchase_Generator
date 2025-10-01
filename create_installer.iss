@@ -3,7 +3,7 @@
 
 [Setup]
 AppName=PackageGeneratorApp
-AppVersion=1.0.2
+AppVersion=1.0.3
 AppPublisher=GameIsFlash
 AppPublisherURL=https://github.com/GameIsFlash/Purchase_Generator
 DefaultDirName={autopf}\PackageGeneratorApp
@@ -15,7 +15,7 @@ Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=admin
 WizardStyle=modern
-VersionInfoVersion=1.0.2
+VersionInfoVersion=1.0.3
 VersionInfoCompany=GameIsFlash
 VersionInfoDescription=Генератор покупок
 
