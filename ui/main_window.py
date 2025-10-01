@@ -26,7 +26,7 @@ class SearchDialog:
 
         self.dialog = ctk.CTkToplevel(parent)
         self.dialog.title("Поиск товара")
-        self.dialog.geometry("700x500")
+        self.dialog.geometry("1000x1000")
         self.dialog.resizable(True, True)
         self.dialog.transient(parent)
         self.dialog.grab_set()
