@@ -13,6 +13,18 @@ set REPO_PATH=C:\Dev\Purchase_generator_final
 set GITHUB_USER=GameIsFlash
 set GITHUB_REPO=Purchase_Generator
 set GITHUB_URL=https://github.com/GameIsFlash/Purchase_Generator.git
+set VENV_PATH=C:\Dev\Purchase_generator_final\.venv
+
+REM --- ПРОВЕРКА VIRTUAL ENVIRONMENT ---
+echo Проверка виртуального окружения...
+if exist "!VENV_PATH!\Scripts\activate.bat" (
+    echo Активация виртуального окружения...
+    call "!VENV_PATH!\Scripts\activate.bat"
+    echo Виртуальное окружение активировано
+) else (
+    echo ВНИМАНИЕ: Виртуальное окружение не найдено по пути: !VENV_PATH!
+    echo Убедись что PyInstaller установлен в системе
+)
 
 REM --- ПРОВЕРКА GIT РЕПОЗИТОРИЯ ---
 echo Проверка Git репозитория...
@@ -156,17 +168,6 @@ git push -u origin master
 
 if !errorlevel! neq 0 (
     echo ОШИБКА: Не удалось запушить в GitHub
-    echo.
-    echo ВОЗМОЖНЫЕ ПРИЧИНЫ:
-    echo 1. Нет доступа к репозиторию
-    echo 2. Неправильный URL репозитория
-    echo 3. Нужна аутентификация
-    echo.
-    echo Проверь:
-    echo - Правильность URL: !GITHUB_URL!
-    echo - Наличие репозитория: https://github.com/GameIsFlash/Purchase_Generator
-    echo - Настройки доступа
-    echo.
     echo Продолжаем сборку без пуша на GitHub...
     set GIT_ERROR=1
 )
@@ -177,6 +178,18 @@ echo Шаг 4: Сборка приложения...
 echo Очистка предыдущих сборок...
 if exist "build" rmdir /s /q "build"
 if exist "dist" rmdir /s /q "dist"
+
+echo Проверка PyInstaller...
+pyinstaller --version >nul 2>&1
+if !errorlevel! neq 0 (
+    echo ОШИБКА: PyInstaller не найден!
+    echo.
+    echo Установи PyInstaller: pip install pyinstaller
+    echo Или активируй виртуальное окружение вручную
+    echo.
+    pause
+    exit /b 1
+)
 
 echo Сборка EXE через PyInstaller...
 pyinstaller PurchaseGenerator.spec
