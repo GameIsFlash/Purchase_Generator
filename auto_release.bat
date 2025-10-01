@@ -207,6 +207,18 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
+REM --- ПРОВЕРКА СОЗДАННОГО УСТАНОВЩИКА ---
+echo Проверка созданного установщика...
+if exist "Output\PackageGeneratorApp.exe" (
+    echo ✓ Установщик создан: Output\PackageGeneratorApp.exe
+    dir "Output\PackageGeneratorApp.exe"
+) else (
+    echo ОШИБКА: Установщик не создан!
+    echo Проверьте путь Inno Setup и файл create_installer.iss
+    pause
+    exit /b 1
+)
+
 REM --- ПОДПИСЫВАНИЕ ФАЙЛОВ ---
 echo Шаг 5: Подписывание файлов...
 
@@ -254,6 +266,8 @@ if defined GIT_ERROR (
     )
 
     echo. >> changelog.md
+    echo --- >> changelog.md
+    echo. >> changelog.md
     echo ## Установка: >> changelog.md
     echo 1. Скачайте ^`PackageGeneratorApp.exe^` >> changelog.md
     echo 2. Запустите установщик >> changelog.md
@@ -264,25 +278,35 @@ if defined GIT_ERROR (
         del update_description.txt
     )
 
-    if exist "Output\PackageGeneratorApp.exe" (
+    echo Проверка наличия GitHub CLI...
+    gh --version >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo ОШИБКА: GitHub CLI не установлен!
+        echo Установите: winget install GitHub.cli
+        echo Затем выполните: gh auth login
+    ) else (
         echo Создание релиза на GitHub...
         gh release create v!NEW_VERSION! "Output\PackageGeneratorApp.exe" --title "v!NEW_VERSION!" --notes-file changelog.md
 
         if !errorlevel! neq 0 (
             echo Ошибка при создании релиза
             echo Убедись, что:
-            echo 1. Установлен GitHub CLI: winget install GitHub.cli
-            echo 2. Выполнен вход: gh auth login
-            echo 3. Токен имеет права на создание релизов
+            echo 1. Выполнен вход: gh auth login
+            echo 2. Токен имеет права на создание релизов
+            echo 3. Репозиторий существует: https://github.com/!GITHUB_USER!/!GITHUB_REPO!
         ) else (
-            echo Релиз успешно создан на GitHub!
+            echo ✓ Релиз успешно создан на GitHub!
         )
-    ) else (
-        echo ОШИБКА: Файл установщика не найден: Output\PackageGeneratorApp.exe
     )
 
     del changelog.md 2>nul
 )
+
+REM --- ОЧИСТКА ВРЕМЕННЫХ ФАЙЛОВ ---
+echo Очистка временных файлов...
+if exist "build" rmdir /s /q "build" 2>nul
+if exist "__pycache__" rmdir /s /q "__pycache__" 2>nul
+if exist "*.spec" del "*.spec" 2>nul
 
 echo.
 echo ========================================
@@ -295,9 +319,9 @@ if defined FIRST_RELEASE (
     echo Что было сделано:
     echo ✓ Версия обновлена с !CURRENT_VERSION! до !NEW_VERSION!
 )
-echo ✓ EXE файл собран
-echo ✓ Установщик создан
-echo ✓ Файлы подписаны
+echo ✓ EXE файл собран: dist\PurchaseGenerator.exe
+echo ✓ Установщик создан: Output\PackageGeneratorApp.exe
+echo ✓ Файлы подписаны (если доступно)
 if defined GIT_ERROR (
     echo ⚠ Код НЕ запушен на GitHub (ошибка Git)
     echo ⚠ Релиз НЕ создан на GitHub
@@ -309,4 +333,10 @@ if defined GIT_ERROR (
 )
 echo.
 
+REM --- ПРОВЕРКА ДОСТУПНОСТИ РЕЛИЗА ---
+echo Проверка доступности релиза на GitHub...
+powershell -Command "Start-Sleep -Seconds 2"
+echo Можно проверить вручную: https://github.com/!GITHUB_USER!/!GITHUB_REPO!/releases
+
+echo.
 pause
