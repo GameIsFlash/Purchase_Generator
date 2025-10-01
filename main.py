@@ -13,69 +13,75 @@ def check_for_updates():
     Проверяет обновления на GitHub с GUI-диалогами
     """
     try:
-        # Текущая версия приложения (меняй при каждом обновлении!)
-        CURRENT_VERSION = "1.0.1"
+        CURRENT_VERSION = "1.0.0"  # Автоматически обновляется батником
 
-        # URL твоего GitHub репозитория
         GITHUB_API_URL = "https://api.github.com/repos/GameIsFlash/Purchase_Generator/releases/latest"
 
         print("Проверка обновлений...")
-        response = requests.get(GITHUB_API_URL)
+        response = requests.get(GITHUB_API_URL, timeout=10)
 
         if response.status_code == 200:
             release_info = response.json()
-            latest_version = release_info['tag_name']
+            latest_version = release_info['tag_name'].lstrip('v')
 
             if latest_version != CURRENT_VERSION:
-                # Показываем диалоговое окно с предложением обновиться
                 update_choice = messagebox.askyesno(
                     "Доступно обновление",
                     f"Доступна новая версия {latest_version}. Установить обновление?\n\nПриложение закроется для установки."
                 )
 
                 if update_choice:
-                    # Ищем установщик в активах релиза
                     for asset in release_info['assets']:
                         if "PackageGeneratorApp_Setup" in asset['name'] and asset['name'].endswith('.exe'):
                             return download_and_install(asset['browser_download_url'])
-                else:
-                    # Пользователь отказался от обновления
-                    messagebox.showinfo("Обновление", "Вы можете обновиться позже через меню помощи.")
 
         return False
 
     except Exception as e:
         print(f"Ошибка при проверке обновлений: {e}")
-        # Не показываем ошибку пользователю, чтобы не мешать работе
         return False
 
 
 def download_and_install(download_url):
     """
-    Скачивает и устанавливает обновление
+    Скачивает и устанавливает обновление с принудительным закрытием
     """
     try:
-        # Временная папка для загрузки
         temp_dir = tempfile.gettempdir()
         installer_path = os.path.join(temp_dir, "PackageGeneratorApp_Update.exe")
+        batch_script_path = os.path.join(temp_dir, "update_launcher.bat")
 
-        # Показываем уведомление о начале загрузки
-        messagebox.showinfo("Обновление", "Начинается загрузка обновления...")
+        messagebox.showinfo("Обновление", "Скачивание обновления...")
 
-        print("Скачивание обновления...")
-        response = requests.get(download_url, stream=True)
-
+        # Скачиваем установщик
+        response = requests.get(download_url, stream=True, timeout=30)
         with open(installer_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk:
                     f.write(chunk)
 
-        print("Запуск установщика обновления...")
-        # Запускаем установщик с тихими параметрами
-        subprocess.Popen([installer_path, '/SILENT', '/NORESTART'])
+        # Создаем BAT-скрипт для обновления
+        batch_script = f"""
+@echo off
+chcp 65001 >nul
+echo Закрытие приложения для обновления...
+timeout /t 3 /nobreak >nul
+taskkill /f /im "PurchaseGenerator.exe" >nul 2>&1
+timeout /t 2 /nobreak >nul
+echo Запуск установщика обновления...
+"{{installer_path}}" /SILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS
+echo Удаление временных файлов...
+del "{{batch_script_path}}"
+exit
+""".replace("{{installer_path}}", installer_path).replace("{{batch_script_path}}", batch_script_path)
+
+        with open(batch_script_path, 'w', encoding='utf-8') as bat_file:
+            bat_file.write(batch_script)
+
+        # Запускаем BAT-скрипт
+        subprocess.Popen([batch_script_path], shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
 
         # Закрываем текущее приложение
-        messagebox.showinfo("Обновление", "Обновление устанавливается. Приложение закроется.")
         sys.exit(0)
 
     except Exception as e:
@@ -88,15 +94,14 @@ def main():
     """
     Основная функция приложения
     """
-    # Сначала проверяем обновления (в фоновом режиме)
-    # Для GUI приложений лучше запускать проверку через 1-2 секунды после старта
+    # Создаем скрытое окно для диалогов обновления
     root = tk.Tk()
-    root.withdraw()  # Скрываем основное окно
+    root.withdraw()
 
-    # Запускаем проверку обновлений
+    # Проверяем обновления
     check_for_updates()
 
-    # Закрываем временное окно и запускаем основное приложение
+    # Закрываем временное окно
     root.destroy()
 
     # Запускаем основное приложение
