@@ -9,334 +9,108 @@ echo ========================================
 echo.
 
 REM --- КОНФИГУРАЦИЯ ---
-set REPO_PATH=C:\Dev\Purchase_generator_final
+set REPO_PATH=%~dp0
 set GITHUB_USER=GameIsFlash
 set GITHUB_REPO=Purchase_Generator
-set GITHUB_URL=https://github.com/GameIsFlash/Purchase_Generator.git
-set VENV_PATH=C:\Dev\Purchase_generator_final\.venv
 
-REM --- ПРОВЕРКА VIRTUAL ENVIRONMENT ---
-echo Проверка виртуального окружения...
-if exist "!VENV_PATH!\Scripts\activate.bat" (
-    echo Активация виртуального окружения...
-    call "!VENV_PATH!\Scripts\activate.bat"
-    echo Виртуальное окружение активировано
-) else (
-    echo ВНИМАНИЕ: Виртуальное окружение не найдено по пути: !VENV_PATH!
-    echo Убедись что PyInstaller установлен в системе
-)
+REM --- ПЕРЕХОД В ПАПКУ ПРОЕКТА ---
+cd /d "%REPO_PATH%"
 
-REM --- ПРОВЕРКА GIT РЕПОЗИТОРИЯ ---
-echo Проверка Git репозитория...
-git status >nul 2>&1
-if !errorlevel! neq 0 (
-    echo ОШИБКА: Это не Git репозиторий!
-    echo Инициализируем Git...
-    git init
-    git add .
-    git commit -m "Initial commit"
-)
-
-REM --- ПРОВЕРКА REMOTE ORIGIN ---
-echo Проверка remote origin...
-git remote get-url origin >nul 2>&1
-if !errorlevel! neq 0 (
-    echo Remote origin не настроен.
-    echo Добавляем origin: !GITHUB_URL!
-    git remote add origin "!GITHUB_URL!"
-)
-
-REM --- СОЗДАЕМ ВРЕМЕННЫЕ PYTHON СКРИПТЫ ДЛЯ ЧТЕНИЯ ВЕРСИИ ---
-echo import re > get_version.py
-echo content = open('main.py', 'r', encoding='utf-8').read() >> get_version.py
-echo match = re.search(r'CURRENT_VERSION\s*=\s*["'']([0-9.]+)["'']', content) >> get_version.py
-echo if match: >> get_version.py
-echo     print(match.group(1)) >> get_version.py
-echo else: >> get_version.py
-echo     print('0.0.0') >> get_version.py
-
-REM --- ПОЛУЧЕНИЕ ТЕКУЩЕЙ ВЕРСИИ ---
-echo Получение текущей версии...
-python get_version.py > temp_version.txt
-set /p CURRENT_VERSION=<temp_version.txt
-del get_version.py
-del temp_version.txt
-
-if "!CURRENT_VERSION!"=="0.0.0" (
-    echo Не удалось найти CURRENT_VERSION в main.py
-    echo Создаем первую версию 1.0.0
-    set CURRENT_VERSION=1.0.0
-    set NEW_VERSION=1.0.0
-    set FIRST_RELEASE=1
-) else (
-    echo Текущая версия: !CURRENT_VERSION!
-    echo.
-
-    REM --- РАЗБИЕНИЕ ВЕРСИИ НА ЧАСТИ ---
-    for /f "tokens=1,2,3 delims=." %%a in ("!CURRENT_VERSION!") do (
-        set MAJOR=%%a
-        set MINOR=%%b
-        set PATCH=%%c
-    )
-
-    REM --- ЗАПРОС НОВОЙ ВЕРСИИ ---
-    set /p VERSION_TYPE="Выбери тип обновления (1 - patch, 2 - minor, 3 - major): "
-
-    if "!VERSION_TYPE!"=="1" (
-        set /a NEW_PATCH=!PATCH!+1
-        set NEW_VERSION=!MAJOR!.!MINOR!.!NEW_PATCH!
-    ) else if "!VERSION_TYPE!"=="2" (
-        set /a NEW_MINOR=!MINOR!+1
-        set NEW_VERSION=!MAJOR!.!NEW_MINOR!.0
-    ) else if "!VERSION_TYPE!"=="3" (
-        set /a NEW_MAJOR=!MAJOR!+1
-        set NEW_VERSION=!NEW_MAJOR!.0.0
-    ) else (
-        echo Неверный выбор!
-        pause
-        exit /b 1
-    )
-
-    set /p CONFIRM="Новая версия будет: !NEW_VERSION!. Продолжить? (y/n): "
-    if /i not "!CONFIRM!"=="y" (
-        echo Отменено.
-        pause
-        exit /b 1
-    )
-)
-
-echo.
-echo 🚀 Начинаем процесс релиза v!NEW_VERSION!...
-echo.
-
-REM --- СОЗДАЕМ СКРИПТ ДЛЯ ОБНОВЛЕНИЯ main.py ---
-echo import re > update_main.py
-echo content = open('main.py', 'r', encoding='utf-8').read() >> update_main.py
-echo new_version = "!NEW_VERSION!" >> update_main.py
-echo new_content = re.sub(r'CURRENT_VERSION\s*=\s*["'']([0-9.]+)["'']', 'CURRENT_VERSION = "' + new_version + '"', content) >> update_main.py
-echo open('main.py', 'w', encoding='utf-8').write(new_content) >> update_main.py
-
-REM --- СОЗДАЕМ СКРИПТ ДЛЯ ОБНОВЛЕНИЯ create_installer.iss ---
-echo import re > update_iss.py
-echo content = open('create_installer.iss', 'r', encoding='utf-8').read() >> update_iss.py
-echo new_version = "!NEW_VERSION!" >> update_iss.py
-echo content = re.sub(r'AppVersion=[0-9.]+', 'AppVersion=' + new_version, content) >> update_iss.py
-echo content = re.sub(r'VersionInfoVersion=[0-9.]+', 'VersionInfoVersion=' + new_version, content) >> update_iss.py
-echo open('create_installer.iss', 'w', encoding='utf-8').write(content) >> update_iss.py
-
-REM --- ОБНОВЛЕНИЕ ВЕРСИИ В ФАЙЛАХ ---
-echo Шаг 1: Обновление версии в файлах...
-
-echo Обновление main.py...
-python update_main.py
-if !errorlevel! neq 0 (
-    echo Ошибка при обновлении main.py
+REM --- ЗАЩИТА SPEC ФАЙЛА ---
+if not exist "PurchaseGenerator.spec" (
+    echo ОШИБКА: PurchaseGenerator.spec не найден!
+    echo Создайте файл спецификации PyInstaller
     pause
     exit /b 1
 )
 
-echo Обновление create_installer.iss...
-python update_iss.py
-if !errorlevel! neq 0 (
-    echo Ошибка при обновлении create_installer.iss
+REM --- ПОЛУЧЕНИЕ ВЕРСИИ ---
+for /f "tokens=2 delims=^=" %%i in ('findstr "CURRENT_VERSION" main.py') do (
+    set VERSION_LINE=%%i
+)
+set CURRENT_VERSION=!VERSION_LINE:"=!
+set CURRENT_VERSION=!CURRENT_VERSION: =!
+echo Текущая версия: !CURRENT_VERSION!
+
+REM --- ЗАПРОС НОВОЙ ВЕРСИИ ---
+echo.
+echo Введите новую версию (текущая: !CURRENT_VERSION!):
+set /p NEW_VERSION=Новая версия:
+
+if "!NEW_VERSION!"=="" (
+    echo Версия не введена!
     pause
     exit /b 1
 )
 
-del update_main.py
-del update_iss.py
+REM --- ОБНОВЛЕНИЕ ВЕРСИИ ---
+echo.
+echo Обновление версии в файлах...
+python -c "content = open('main.py', 'r', encoding='utf-8').read(); new_content = content.replace('CURRENT_VERSION = \"!CURRENT_VERSION!\"', 'CURRENT_VERSION = \"!NEW_VERSION!\"'); open('main.py', 'w', encoding='utf-8').write(new_content)"
+python -c "content = open('create_installer.iss', 'r', encoding='utf-8').read(); import re; content = re.sub(r'AppVersion=[0-9.]+', 'AppVersion=!NEW_VERSION!', content); content = re.sub(r'VersionInfoVersion=[0-9.]+', 'VersionInfoVersion=!NEW_VERSION!', content); open('create_installer.iss', 'w', encoding='utf-8').write(content)"
 
-REM --- ЧТЕНИЕ ОПИСАНИЯ ОБНОВЛЕНИЯ ---
-echo Шаг 2: Чтение описания обновления...
-
-if exist "update_description.txt" (
-    echo Найден файл update_description.txt
-    copy update_description.txt changelog_temp.txt >nul
-) else (
-    echo Файл update_description.txt не найден, создаем стандартное описание
-    echo. > changelog_temp.txt
-)
-
-REM --- КОММИТ И ПУШ НА GITHUB ---
-echo Шаг 3: Коммит и пуш на GitHub...
-
+REM --- КОММИТ ИЗМЕНЕНИЙ ---
+echo.
+echo Коммит изменений...
 git add .
 git commit -m "🚀 Release v!NEW_VERSION!"
-
-echo Пуш в репозиторий...
-git push -u origin master
-
-if !errorlevel! neq 0 (
-    echo ОШИБКА: Не удалось запушить в GitHub
-    echo Продолжаем сборку без пуша на GitHub...
-    set GIT_ERROR=1
-)
+git push
 
 REM --- СБОРКА ПРИЛОЖЕНИЯ ---
-echo Шаг 4: Сборка приложения...
-
+echo.
+echo Сборка приложения...
 echo Очистка предыдущих сборок...
 if exist "build" rmdir /s /q "build"
 if exist "dist" rmdir /s /q "dist"
 
-echo Проверка PyInstaller...
-pyinstaller --version >nul 2>&1
-if !errorlevel! neq 0 (
-    echo ОШИБКА: PyInstaller не найден!
-    echo.
-    echo Установи PyInstaller: pip install pyinstaller
-    echo Или активируй виртуальное окружение вручную
-    echo.
+echo Запуск PyInstaller...
+pyinstaller PurchaseGenerator.spec --clean
+
+if not exist "dist\PurchaseGenerator.exe" (
+    echo ОШИБКА: Сборка не удалась!
     pause
     exit /b 1
 )
 
-echo Сборка EXE через PyInstaller...
-pyinstaller PurchaseGenerator.spec
-if !errorlevel! neq 0 (
-    echo Ошибка при сборке EXE
+echo ✓ Приложение собрано!
+
+REM --- СОЗДАНИЕ УСТАНОВЩИКА ---
+echo.
+echo Создание установщика...
+set INNO_PATH="C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+if not exist %INNO_PATH% (
+    echo ОШИБКА: Inno Setup не найден!
     pause
     exit /b 1
 )
 
-echo Сборка установщика через Inno Setup...
-"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" create_installer.iss
-if !errorlevel! neq 0 (
-    echo Ошибка при сборке установщика
-    pause
-    exit /b 1
-)
+%INNO_PATH% create_installer.iss
 
-REM --- ПРОВЕРКА СОЗДАННОГО УСТАНОВЩИКА ---
-echo Проверка созданного установщика...
-if exist "Output\PackageGeneratorApp.exe" (
-    echo ✓ Установщик создан: Output\PackageGeneratorApp.exe
-    dir "Output\PackageGeneratorApp.exe"
-) else (
+if not exist "Output\PackageGeneratorApp.exe" (
     echo ОШИБКА: Установщик не создан!
-    echo Проверьте путь Inno Setup и файл create_installer.iss
     pause
     exit /b 1
 )
 
-REM --- ПОДПИСЫВАНИЕ ФАЙЛОВ ---
-echo Шаг 5: Подписывание файлов...
+echo ✓ Установщик создан!
 
-set SIGNTOOL_PATH=C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe
-if exist "!SIGNTOOL_PATH!" (
-    echo Подписывание EXE...
-    "!SIGNTOOL_PATH!" sign /a /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /v "dist\PurchaseGenerator.exe"
-    if !errorlevel! neq 0 (
-        echo Предупреждение: Не удалось подписать EXE, продолжаем...
-    )
-
-    echo Подписывание установщика...
-    "!SIGNTOOL_PATH!" sign /a /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /v "Output\PackageGeneratorApp.exe"
-    if !errorlevel! neq 0 (
-        echo Предупреждение: Не удалось подписать установщик, продолжаем...
-    )
-) else (
-    echo Windows SDK не найден. Пропускаем подписывание.
-)
-
-REM --- СОЗДАНИЕ РЕЛИЗА НА GITHUB ---
-echo Шаг 6: Создание релиза на GitHub...
-
-if defined GIT_ERROR (
-    echo Пропускаем создание релиза из-за ошибок Git
-) else (
-    echo Создание описания релиза...
-    echo # Release v!NEW_VERSION! > changelog.md
-    echo. >> changelog.md
-    echo ## Что нового в этой версии: >> changelog.md
-    echo. >> changelog.md
-
-    if exist "changelog_temp.txt" (
-        type changelog_temp.txt >> changelog.md
-        del changelog_temp.txt
-    ) else (
-        if defined FIRST_RELEASE (
-            echo - Первый релиз приложения >> changelog.md
-            echo - Все основные функции работают >> changelog.md
-        ) else (
-            echo - Автоматическое обновление >> changelog.md
-            echo - Исправление ошибок >> changelog.md
-            echo - Улучшение производительности >> changelog.md
-        )
-    )
-
-    echo. >> changelog.md
-    echo --- >> changelog.md
-    echo. >> changelog.md
-    echo ## Установка: >> changelog.md
-    echo 1. Скачайте ^`PackageGeneratorApp.exe^` >> changelog.md
-    echo 2. Запустите установщик >> changelog.md
-    echo 3. Приложение автоматически обновляется >> changelog.md
-
-    if exist "update_description.txt" (
-        echo Удаление update_description.txt после использования...
-        del update_description.txt
-    )
-
-    echo Проверка наличия GitHub CLI...
-    gh --version >nul 2>&1
-    if !errorlevel! neq 0 (
-        echo ОШИБКА: GitHub CLI не установлен!
-        echo Установите: winget install GitHub.cli
-        echo Затем выполните: gh auth login
-    ) else (
-        echo Создание релиза на GitHub...
-        gh release create v!NEW_VERSION! "Output\PackageGeneratorApp.exe" --title "v!NEW_VERSION!" --notes-file changelog.md
-
-        if !errorlevel! neq 0 (
-            echo Ошибка при создании релиза
-            echo Убедись, что:
-            echo 1. Выполнен вход: gh auth login
-            echo 2. Токен имеет права на создание релизов
-            echo 3. Репозиторий существует: https://github.com/!GITHUB_USER!/!GITHUB_REPO!
-        ) else (
-            echo ✓ Релиз успешно создан на GitHub!
-        )
-    )
-
-    del changelog.md 2>nul
-)
-
-REM --- ОЧИСТКА ВРЕМЕННЫХ ФАЙЛОВ ---
-echo Очистка временных файлов...
-if exist "build" rmdir /s /q "build" 2>nul
-if exist "__pycache__" rmdir /s /q "__pycache__" 2>nul
-if exist "*.spec" del "*.spec" 2>nul
-
+REM --- СОЗДАНИЕ РЕЛИЗА ---
 echo.
-echo ========================================
-echo ✅ РЕЛИЗ v!NEW_VERSION! УСПЕШНО ЗАВЕРШЕН!
-echo ========================================
-echo.
-if defined FIRST_RELEASE (
-    echo 🎉 СОЗДАН ПЕРВЫЙ РЕЛИЗ!
-) else (
-    echo Что было сделано:
-    echo ✓ Версия обновлена с !CURRENT_VERSION! до !NEW_VERSION!
-)
-echo ✓ EXE файл собран: dist\PurchaseGenerator.exe
-echo ✓ Установщик создан: Output\PackageGeneratorApp.exe
-echo ✓ Файлы подписаны (если доступно)
-if defined GIT_ERROR (
-    echo ⚠ Код НЕ запушен на GitHub (ошибка Git)
-    echo ⚠ Релиз НЕ создан на GitHub
-) else (
-    echo ✓ Код запушен на GitHub
-    echo ✓ Релиз создан на GitHub
+echo Создание релиза на GitHub...
+gh release create v!NEW_VERSION! "Output\PackageGeneratorApp.exe" --title "v!NEW_VERSION!" --notes "Автоматический релиз v!NEW_VERSION!"
+
+if !errorlevel! equ 0 (
+    echo ✓ Релиз создан на GitHub!
     echo.
-    echo Ссылка на релиз: https://github.com/!GITHUB_USER!/!GITHUB_REPO!/releases/tag/v!NEW_VERSION!
+    echo Ссылка: https://github.com/!GITHUB_USER!/!GITHUB_REPO!/releases/tag/v!NEW_VERSION!
+) else (
+    echo ⚠ Не удалось создать релиз через GitHub CLI
+    echo Создайте релиз вручную: https://github.com/!GITHUB_USER!/!GITHUB_REPO!/releases
 )
+
 echo.
-
-REM --- ПРОВЕРКА ДОСТУПНОСТИ РЕЛИЗА ---
-echo Проверка доступности релиза на GitHub...
-powershell -Command "Start-Sleep -Seconds 2"
-echo Можно проверить вручную: https://github.com/!GITHUB_USER!/!GITHUB_REPO!/releases
-
+echo ========================================
+echo ✅ РЕЛИЗ v!NEW_VERSION! ЗАВЕРШЁН!
+echo ========================================
 echo.
 pause

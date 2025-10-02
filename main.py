@@ -7,9 +7,10 @@ import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
 import threading
+import time
 
 # ВЕРСИЯ ПРИЛОЖЕНИЯ - автоматически обновляется скриптом релиза
-CURRENT_VERSION = "1.0.11"
+CURRENT_VERSION = "1.0.12"
 
 
 def check_for_updates():
@@ -97,18 +98,19 @@ def compare_versions(v1, v2):
 
 def download_and_install(download_url, new_version):
     """
-    Скачивает и устанавливает обновление с прогресс-баром (автоматически)
+    Скачивает и устанавливает обновление с прогресс-баром
     """
     try:
         temp_dir = tempfile.gettempdir()
         installer_path = os.path.join(temp_dir, "PackageGeneratorApp_Update.exe")
         batch_script_path = os.path.join(temp_dir, "update_launcher.bat")
 
-        # Создаем окно прогресса (БЕЗ КНОПОК)
-        progress_window = tk.Toplevel()
+        # Создаем окно прогресса
+        progress_window = tk.Tk()
         progress_window.title(f"Установка обновления v{new_version}")
-        progress_window.geometry("450x180")
+        progress_window.geometry("450x200")
         progress_window.resizable(False, False)
+        progress_window.configure(bg='white')
 
         # Убираем кнопку закрытия
         progress_window.protocol("WM_DELETE_WINDOW", lambda: None)
@@ -123,14 +125,16 @@ def download_and_install(download_url, new_version):
         title_label = tk.Label(
             progress_window,
             text=f"Обнаружено обновление v{new_version}",
-            font=("Arial", 12, "bold")
+            font=("Arial", 12, "bold"),
+            bg='white'
         )
         title_label.pack(pady=15)
 
         label = tk.Label(
             progress_window,
             text="Автоматическая установка обновления...",
-            font=("Arial", 10)
+            font=("Arial", 10),
+            bg='white'
         )
         label.pack(pady=5)
 
@@ -145,15 +149,17 @@ def download_and_install(download_url, new_version):
         status_label = tk.Label(
             progress_window,
             text="Подготовка к скачиванию...",
-            font=("Arial", 9)
+            font=("Arial", 9),
+            bg='white'
         )
         status_label.pack(pady=5)
 
         info_label = tk.Label(
             progress_window,
-            text="Приложение будет перезапущено после установки",
+            text="Приложение будет автоматически перезапущено после установки",
             font=("Arial", 8),
-            fg="gray"
+            fg="gray",
+            bg='white'
         )
         info_label.pack(pady=5)
 
@@ -191,34 +197,28 @@ def download_and_install(download_url, new_version):
                         progress_window.update()
 
         progress_bar['value'] = 100
-        status_label.config(text="Скачивание завершено!")
+        status_label.config(text="Скачивание завершено! Запуск установки...")
         progress_window.update()
-
-        # Небольшая пауза
-        progress_window.after(800)
-        progress_window.update()
-
-        status_label.config(text="Запуск установщика...")
-        progress_window.update()
-
-        print("Установщик скачан, создание скрипта обновления...")
 
         # Создаем BAT-скрипт для автоматического обновления
+        current_exe = sys.executable
+        app_name = os.path.basename(current_exe)
+
         batch_script = f"""@echo off
 chcp 65001 >nul
 echo Подготовка к обновлению...
 timeout /t 2 /nobreak >nul
 
 REM Закрываем приложение
-taskkill /f /im "PurchaseGenerator.exe" >nul 2>&1
-timeout /t 1 /nobreak >nul
+taskkill /f /im "{app_name}" >nul 2>&1
+timeout /t 3 /nobreak >nul
 
-REM Запускаем установщик в тихом режиме (/VERYSILENT для полной тишины)
+REM Запускаем установщик
 echo Установка обновления...
-start /wait "" "{installer_path}" /VERYSILENT /NORESTART /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS
+start /wait "" "{installer_path}" /SILENT /NORESTART
 
 REM Ждём завершения установки
-timeout /t 2 /nobreak >nul
+timeout /t 5 /nobreak >nul
 
 REM Удаляем временные файлы
 del "{installer_path}" >nul 2>&1
@@ -237,33 +237,23 @@ exit
 
         print("Запуск скрипта обновления...")
 
-        # Запускаем BAT-скрипт скрыто
+        # Запускаем BAT-скрипт
         subprocess.Popen(
             [batch_script_path],
             shell=True,
-            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
         )
 
-        # Даём время на запуск скрипта
-        progress_window.after(500)
-        progress_window.update()
-
-        # Закрываем окно прогресса и приложение
-        progress_window.destroy()
-
-        print("Завершение работы для обновления...")
+        # Закрываем приложение
+        time.sleep(2)
         sys.exit(0)
 
     except Exception as e:
         print(f"Ошибка при установке обновления: {e}")
         import traceback
         traceback.print_exc()
-
-        try:
-            progress_window.destroy()
-        except:
-            pass
-
         return False
 
 
@@ -271,7 +261,13 @@ def check_updates_async():
     """
     Проверяет обновления в фоновом потоке
     """
-    thread = threading.Thread(target=check_for_updates, daemon=True)
+
+    def check():
+        # Даем основному приложению время запуститься
+        time.sleep(3)
+        check_for_updates()
+
+    thread = threading.Thread(target=check, daemon=True)
     thread.start()
 
 
@@ -286,16 +282,17 @@ def main():
     # Проверяем обновления асинхронно
     check_updates_async()
 
-    # Небольшая пауза чтобы проверка началась
-    root.after(100)
-    root.update()
-
     # Закрываем временное окно
-    root.destroy()
+    root.after(1000, root.destroy)
+    root.mainloop()
 
     # Запускаем основное приложение
-    from ui.main_window import main as ui_main
-    ui_main()
+    try:
+        from ui.main_window import main as ui_main
+        ui_main()
+    except ImportError as e:
+        print(f"Ошибка импорта UI: {e}")
+        input("Нажмите Enter для выхода...")
 
 
 if __name__ == "__main__":

@@ -3,28 +3,27 @@
 
 [Setup]
 AppName=PackageGeneratorApp
-AppVersion=1.0.11
+AppVersion=1.0.12
 AppPublisher=GameIsFlash
 AppPublisherURL=https://github.com/GameIsFlash/Purchase_Generator
 DefaultDirName={autopf}\PackageGeneratorApp
 DefaultGroupName=PackageGeneratorApp
 OutputDir=Output
 OutputBaseFilename=PackageGeneratorApp
-SetupIconFile=C:\Dev\Purchase_generator_final\icon.ico
+SetupIconFile=icon.ico
 Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=admin
 WizardStyle=modern
-VersionInfoVersion=1.0.11
+VersionInfoVersion=1.0.12
 VersionInfoCompany=GameIsFlash
 VersionInfoDescription=Генератор покупок
-; Разрешаем установку поверх старой версии
 AllowNoIcons=yes
 DisableProgramGroupPage=yes
-; Важно для автоматических обновлений
 DisableWelcomePage=no
 CloseApplications=yes
-RestartApplications=yes
+RestartApplications=no
+SetupLogging=yes
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
@@ -33,14 +32,27 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; GroupDescription: "Дополнительные ярлыки:"
 
 [Files]
-; Копируем собранное приложение
-Source: "C:\Dev\Purchase_generator_final\dist\PurchaseGenerator.exe"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
-; Копируем папку data
-Source: "C:\Dev\Purchase_generator_final\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs
+Source: "dist\PurchaseGenerator.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs
+Source: "requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Сборщик"; Filename: "{app}\PurchaseGenerator.exe"
-Name: "{autodesktop}\Сборщик"; Filename: "{app}\PurchaseGenerator.exe"; Tasks: desktopicon
+Name: "{group}\PackageGeneratorApp"; Filename: "{app}\PurchaseGenerator.exe"
+Name: "{autodesktop}\PackageGeneratorApp"; Filename: "{app}\PurchaseGenerator.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\PurchaseGenerator.exe"; Description: "Запустить Сборщик"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\PurchaseGenerator.exe"; Description: "Запустить приложение"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{cmd}"; Parameters: "/C taskkill /f /im PurchaseGenerator.exe"; Flags: runhidden
+
+[Code]
+function InitializeSetup(): Boolean;
+begin
+  Result := True;
+end;
+
+function InitializeUninstall(): Boolean;
+begin
+  Result := True;
+end;
