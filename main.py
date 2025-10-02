@@ -10,7 +10,7 @@ import threading
 import time
 
 # ВЕРСИЯ ПРИЛОЖЕНИЯ - автоматически обновляется скриптом релиза
-CURRENT_VERSION = "1.0.12"
+CURRENT_VERSION = "1.0.13"
 
 
 def check_for_updates():
