@@ -2,16 +2,13 @@
 
 block_cipher = None
 
-# ДОБАВЬТЕ ЭТОТ ФАЙЛ В .gitignore ЧТОБЫ ОН НЕ УДАЛЯЛСЯ
-
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
     datas=[
-        ('data', 'data'),
-        ('ui', 'ui'),
-        ('requirements.txt', '.')
+        ('data/*', 'data'),
+        ('ui/*', 'ui'),
     ],
     hiddenimports=[
         'tkinter',
@@ -19,6 +16,7 @@ a = Analysis(
         'openpyxl',
         'pandas',
         'PIL',
+        'PIL._tkinter_finder',
         'requests',
         'threading',
         'tempfile',
@@ -35,39 +33,28 @@ a = Analysis(
     noarchive=False,
 )
 
-# Добавляем дополнительные файлы
-added_files = []
-
-# Добавляем иконку если есть
-icon_path = None
-try:
-    if os.path.exists('icon.ico'):
-        icon_path = 'icon.ico'
-        added_files.append(('icon.ico', '.', 'DATA'))
-except:
-    pass
+# Убираем проблемные пути
+for item in a.datas[:]:
+    if item[0] == '.':
+        a.datas.remove(item)
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    added_files,
+    [],
+    exclude_binaries=True,
     name='PurchaseGenerator',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,  # Измените на True для отладки
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=icon_path,
+    icon='icon.ico' if os.path.exists('icon.ico') else None,
 )

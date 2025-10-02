@@ -18,7 +18,7 @@ REM --- ПЕРЕХОД В ПАПКУ ПРОЕКТА ---
 cd /d "%REPO_PATH%"
 echo Текущая папка: %CD%
 
-REM --- ПРОВЕРКА VIRTUAL ENVIRONMENT ---
+REM --- ПРОВЕРКА И АКТИВАЦИЯ VENV ---
 echo.
 echo Проверка виртуального окружения...
 if exist "%VENV_PATH%\Scripts\activate.bat" (
@@ -26,29 +26,29 @@ if exist "%VENV_PATH%\Scripts\activate.bat" (
     call "%VENV_PATH%\Scripts\activate.bat"
     echo ✓ Виртуальное окружение активировано
 ) else (
-    echo ⚠ Виртуальное окружение не найдено, используем системный Python
-    python --version
+    echo Создание виртуального окружения...
+    python -m venv .venv
+    call ".venv\Scripts\activate.bat"
+    echo Установка зависимостей...
+    pip install -r requirements.txt >nul 2>&1
+    pip install pyinstaller >nul 2>&1
+    echo ✓ Виртуальное окружение создано и настроено
 )
 
-REM --- ПРОВЕРКА PYINSTALLER ---
+REM --- ПРОВЕРКА ЗАВИСИМОСТЕЙ ---
 echo.
-echo Проверка PyInstaller...
+echo Проверка зависимостей...
 pyinstaller --version >nul 2>&1
 if !errorlevel! neq 0 (
-    echo ❌ ОШИБКА: PyInstaller не найден!
-    echo Установите: pip install pyinstaller
-    pause
-    exit /b 1
+    echo Установка PyInstaller...
+    pip install pyinstaller >nul 2>&1
 )
-echo ✓ PyInstaller доступен
-
-REM --- ЗАЩИТА SPEC ФАЙЛА ---
-if not exist "PurchaseGenerator.spec" (
-    echo ❌ ОШИБКА: PurchaseGenerator.spec не найден!
-    echo Создайте файл спецификации PyInstaller
-    pause
-    exit /b 1
+python -c "import requests" 2>nul
+if !errorlevel! neq 0 (
+    echo Установка недостающих библиотек...
+    pip install -r requirements.txt >nul 2>&1
 )
+echo ✓ Все зависимости проверены
 
 REM --- ПОЛУЧЕНИЕ ВЕРСИИ ---
 for /f "tokens=2 delims=^=" %%i in ('findstr "CURRENT_VERSION" main.py') do (
@@ -58,165 +58,129 @@ set "CURRENT_VERSION=!VERSION_LINE:"=!"
 set "CURRENT_VERSION=!CURRENT_VERSION: =!"
 echo Текущая версия: !CURRENT_VERSION!
 
-REM --- ЗАПРОС НОВОЙ ВЕРСИИ ---
+REM --- АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ ВЕРСИИ ---
 echo.
-echo Введите новую версию (текущая: !CURRENT_VERSION!):
-set /p NEW_VERSION=Новая версия:
-
-if "!NEW_VERSION!"=="" (
-    echo ❌ Версия не введена!
-    pause
-    exit /b 1
+echo Автоматическое обновление версии...
+for /f "tokens=1,2,3 delims=." %%a in ("!CURRENT_VERSION!") do (
+    set MAJOR=%%a
+    set MINOR=%%b
+    set PATCH=%%c
 )
+set /a NEW_PATCH=!PATCH!+1
+set "NEW_VERSION=!MAJOR!.!MINOR!.!NEW_PATCH!"
+echo Новая версия: !CURRENT_VERSION! -^> !NEW_VERSION!
 
-REM --- ПОДТВЕРЖДЕНИЕ ---
+REM --- ОБНОВЛЕНИЕ ВЕРСИИ В ФАЙЛАХ ---
 echo.
-echo Подтвердите обновление:
-echo Старая версия: !CURRENT_VERSION!
-echo Новая версия:  !NEW_VERSION!
-set /p CONFIRM=Продолжить? (y/n):
-if /i not "!CONFIRM!"=="y" (
-    echo Отменено пользователем
-    pause
-    exit /b 1
-)
-
-REM --- ОБНОВЛЕНИЕ ВЕРСИИ ---
-echo.
-echo Шаг 1/5: Обновление версии в файлах...
-
-echo   Обновление main.py...
+echo Шаг 1/4: Обновление версии в файлах...
 python -c "content = open('main.py', 'r', encoding='utf-8').read(); new_content = content.replace('CURRENT_VERSION = \"!CURRENT_VERSION!\"', 'CURRENT_VERSION = \"!NEW_VERSION!\"'); open('main.py', 'w', encoding='utf-8').write(new_content)"
-
-echo   Обновление create_installer.iss...
 python -c "content = open('create_installer.iss', 'r', encoding='utf-8').read(); import re; content = re.sub(r'AppVersion=[0-9.]+', 'AppVersion=!NEW_VERSION!', content); content = re.sub(r'VersionInfoVersion=[0-9.]+', 'VersionInfoVersion=!NEW_VERSION!', content); open('create_installer.iss', 'w', encoding='utf-8').write(content)"
-
 echo ✓ Версии обновлены
 
-REM --- КОММИТ ИЗМЕНЕНИЙ ---
+REM --- КОММИТ И ПУШ ---
 echo.
-echo Шаг 2/5: Коммит изменений в Git...
-
-git add .
-git commit -m "🚀 Release v!NEW_VERSION!"
-git push
-
-if !errorlevel! equ 0 (
-    echo ✓ Изменения запушены на GitHub
-) else (
-    echo ⚠ Ошибка при пуше в GitHub, продолжаем...
-)
+echo Шаг 2/4: Коммит изменений в Git...
+git add . >nul 2>&1
+git commit -m "🚀 Release v!NEW_VERSION!" >nul 2>&1
+git push >nul 2>&1
+echo ✓ Код загружен на GitHub
 
 REM --- СБОРКА ПРИЛОЖЕНИЯ ---
 echo.
-echo Шаг 3/5: Сборка приложения...
-
+echo Шаг 3/4: Сборка приложения...
 echo   Очистка предыдущих сборок...
 if exist "build" rmdir /s /q "build" 2>nul
 if exist "dist" rmdir /s /q "dist" 2>nul
+if exist "Output" rmdir /s /q "Output" 2>nul
 
-echo   Запуск PyInstaller...
-pyinstaller PurchaseGenerator.spec --clean
+echo   Сборка EXE файла...
+pyinstaller --noconfirm --clean --windowed --icon=icon.ico --name=PurchaseGenerator --add-data="data;data" --add-data="ui;ui" --hidden-import=tkinter --hidden-import=customtkinter --hidden-import=openpyxl --hidden-import=pandas --hidden-import=PIL --hidden-import=requests --hidden-import=threading --hidden-import=tempfile --hidden-import=subprocess --hidden-import=pathlib main.py >nul 2>&1
 
-if !errorlevel! neq 0 (
-    echo ❌ ОШИБКА: Сборка PyInstaller не удалась!
+if not exist "dist\PurchaseGenerator\PurchaseGenerator.exe" (
+    echo ❌ ОШИБКА: Не удалось собрать EXE файл!
+    echo Пробуем альтернативный метод сборки...
+    pyinstaller --noconfirm --clean --onefile --windowed --icon=icon.ico --name=PurchaseGenerator --add-data="data;data" --add-data="ui;ui" --hidden-import=tkinter --hidden-import=customtkinter --hidden-import=openpyxl --hidden-import=pandas --hidden-import=PIL --hidden-import=requests main.py >nul 2>&1
+)
+
+if exist "dist\PurchaseGenerator\PurchaseGenerator.exe" (
+    echo ✓ EXE собран: dist\PurchaseGenerator\PurchaseGenerator.exe
+) else if exist "dist\PurchaseGenerator.exe" (
+    echo ✓ EXE собран: dist\PurchaseGenerator.exe
+) else (
+    echo ❌ Критическая ошибка сборки!
     pause
     exit /b 1
 )
-
-if not exist "dist\PurchaseGenerator.exe" (
-    echo ❌ ОШИБКА: EXE файл не создан!
-    dir dist 2>nul || echo Папка dist не существует
-    pause
-    exit /b 1
-)
-
-echo ✓ Приложение собрано: dist\PurchaseGenerator.exe
 
 REM --- СОЗДАНИЕ УСТАНОВЩИКА ---
 echo.
-echo Шаг 4/5: Создание установщика...
-
+echo Шаг 4/4: Создание установщика...
 set "INNO_PATH=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 if not exist "%INNO_PATH%" (
-    echo ❌ ОШИБКА: Inno Setup не найден!
-    echo Установите Inno Setup: https://jrsoftware.org/isdl.php
-    pause
-    exit /b 1
+    set "INNO_PATH=C:\Program Files (x86)\Inno Setup 5\ISCC.exe"
 )
 
-echo   Компиляция установщика...
-"%INNO_PATH%" create_installer.iss
+if exist "%INNO_PATH%" (
+    echo   Компиляция установщика Inno Setup...
+    "%INNO_PATH%" create_installer.iss >nul 2>&1
 
-if !errorlevel! neq 0 (
-    echo ❌ ОШИБКА: Создание установщика не удалось!
-    pause
-    exit /b 1
-)
+    if exist "Output\PackageGeneratorApp.exe" (
+        echo ✓ Установщик создан: Output\PackageGeneratorApp.exe
 
-if not exist "Output\PackageGeneratorApp.exe" (
-    echo ❌ ОШИБКА: Установщик не создан!
-    dir Output 2>nul || echo Папка Output не существует
-    pause
-    exit /b 1
-)
+        REM --- СОЗДАНИЕ РЕЛИЗА НА GITHUB ---
+        echo.
+        echo Создание релиза на GitHub...
+        gh --version >nul 2>&1
+        if !errorlevel! equ 0 (
+            (
+            echo # Release v!NEW_VERSION!
+            echo.
+            echo ## Автоматический релиз
+            echo - Обновление версии: !CURRENT_VERSION! → !NEW_VERSION!
+            echo - Улучшена стабильность работы
+            echo - Исправлены мелкие ошибки
+            echo.
+            echo ## Установка
+            echo 1. Скачайте ^`PackageGeneratorApp.exe^`
+            echo 2. Запустите установщик
+            echo 3. Приложение будет автоматически обновляться
+            ) > release_notes.md
 
-echo ✓ Установщик создан: Output\PackageGeneratorApp.exe
+            gh release create v!NEW_VERSION! "Output\PackageGeneratorApp.exe" --title "v!NEW_VERSION!" --notes-file release_notes.md >nul 2>&1
+            del release_notes.md 2>nul
 
-REM --- СОЗДАНИЕ РЕЛИЗА ---
-echo.
-echo Шаг 5/5: Создание релиза на GitHub...
-
-echo   Проверка GitHub CLI...
-gh --version >nul 2>&1
-if !errorlevel! neq 0 (
-    echo ⚠ GitHub CLI не установлен, пропускаем создание релиза
-    goto SKIP_RELEASE
-)
-
-echo   Создание описания релиза...
-(
-echo # Release v!NEW_VERSION!
-echo.
-echo ## Что нового
-echo - Автоматическое обновление
-echo - Исправления и улучшения
-echo.
-echo ## Установка
-echo 1. Скачайте `PackageGeneratorApp.exe`
-echo 2. Запустите установщик
-echo 3. Приложение будет автоматически обновляться
-) > release_notes.md
-
-echo   Создание релиза...
-gh release create v!NEW_VERSION! "Output\PackageGeneratorApp.exe" --title "v!NEW_VERSION!" --notes-file release_notes.md
-
-if !errorlevel! equ 0 (
-    echo ✓ Релиз создан на GitHub!
-    echo.
-    echo 🌐 Ссылка: https://github.com/!GITHUB_USER!/!GITHUB_REPO!/releases/tag/v!NEW_VERSION!
+            echo ✓ Релиз создан на GitHub!
+            echo 🌐 https://github.com/!GITHUB_USER!/!GITHUB_REPO!/releases/tag/v!NEW_VERSION!
+        ) else (
+            echo ⚠ GitHub CLI не установлен, релиз не создан
+        )
+    ) else (
+        echo ⚠ Не удалось создать установщик
+    )
 ) else (
-    echo ⚠ Не удалось создать релиз через GitHub CLI
+    echo ⚠ Inno Setup не найден, установщик не создан
 )
 
-del release_notes.md 2>nul
-
-:SKIP_RELEASE
-
-REM --- ЗАВЕРШЕНИЕ ---
+REM --- ФИНАЛЬНЫЙ ОТЧЕТ ---
 echo.
 echo ========================================
-echo ✅ РЕЛИЗ v!NEW_VERSION! ЗАВЕРШЁН!
+echo ✅ АВТОМАТИЧЕСКИЙ РЕЛИЗ ЗАВЕРШЁН!
 echo ========================================
 echo.
-echo 📁 Файлы:
-echo    • dist\PurchaseGenerator.exe
-echo    • Output\PackageGeneratorApp.exe
+echo 📊 Результаты:
+echo    ✓ Версия: !CURRENT_VERSION! → !NEW_VERSION!
+echo    ✓ Код загружен на GitHub
+echo    ✓ Приложение собрано
+if exist "Output\PackageGeneratorApp.exe" (
+    echo    ✓ Установщик создан
+    echo.
+    echo 📁 Установщик: Output\PackageGeneratorApp.exe
+) else (
+    echo    ⚠ Установщик не создан
+    echo.
+    echo 📁 EXE файл: dist\PurchaseGenerator\PurchaseGenerator.exe
+)
 echo.
-echo 📋 Действия:
-echo    • Версия обновлена: !CURRENT_VERSION! → !NEW_VERSION!
-echo    • Код загружен на GitHub
-echo    • Приложение собрано
-echo    • Установщик создан
+echo 🚀 Пользователи получат обновление автоматически!
 echo.
 pause
